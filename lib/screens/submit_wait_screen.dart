@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-// Fix imports
-import 'package:navi_app/models/stage_model.dart';
-import 'package:navi_app/models/route_model.dart';
-import 'package:navi_app/models/wait_report_model.dart'; // ADD THIS IMPORT
+// Fix imports - use transport_models.dart
+import 'package:navi_app/models/transport_models.dart';
+import 'package:navi_app/models/wait_report_model.dart';
 import 'package:navi_app/services/database_service.dart';
 import 'package:navi_app/utils/constants.dart';
 import 'package:navi_app/providers/app_state_provider.dart';
+import 'package:navi_app/services/settings_service.dart';
 import 'package:navi_app/data/seed_data.dart';
 
 class SubmitWaitScreen extends StatefulWidget {
@@ -50,6 +50,14 @@ class _SubmitWaitScreenState extends State<SubmitWaitScreen> {
       // In production, you would fetch from Firestore
       _stages = SeedData.getStages();
       _routes = SeedData.getRoutes();
+
+      // Match initial stage to local instance for dropdown value match
+      if (widget.initialStage != null) {
+        final match = _stages.where((s) => s.id == widget.initialStage!.id);
+        if (match.isNotEmpty) {
+          _selectedStage = match.first;
+        }
+      }
       
       // If we have an initial stage, filter routes for it
       if (_selectedStage != null) {
@@ -71,10 +79,10 @@ class _SubmitWaitScreenState extends State<SubmitWaitScreen> {
   }
 
   void _filterRoutesForStage(StageModel stage) {
-    if (stage.routes != null && stage.routes!.isNotEmpty) {
+    if (stage.routes.isNotEmpty) {
       setState(() {
         _filteredRoutes = _routes.where((route) {
-          return stage.routes!.contains(route.number);
+          return stage.routes.contains(route.number);
         }).toList();
       });
     } else {
@@ -102,7 +110,6 @@ class _SubmitWaitScreenState extends State<SubmitWaitScreen> {
     });
 
     try {
-      // FIXED: Create the report object first
       final now = DateTime.now();
       
       final newReport = WaitReportModel(
@@ -112,16 +119,16 @@ class _SubmitWaitScreenState extends State<SubmitWaitScreen> {
         timestamp: now,
         dayOfWeek: now.weekday,
         hourOfDay: now.hour,
-        // userId will be added by the database service
       );
 
-      // FIXED: Pass the report object to submitReport
       final reportId = await _databaseService.submitReport(newReport);
 
       if (reportId != null) {
-        // Update provider
         if (mounted) {
           Provider.of<AppStateProvider>(context, listen: false).incrementReportsSubmitted();
+          // Keep the persistent SettingsService counter in sync so Profile's
+          // "Reports" statistic reflects every successful submission.
+          context.read<SettingsService>().incrementReportsSubmitted();
           
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -190,13 +197,13 @@ class _SubmitWaitScreenState extends State<SubmitWaitScreen> {
               value: _selectedStage,
               hint: const Text('Choose a stage'),
               isExpanded: true,
-              items: _stages.map((stage) {
-                return DropdownMenuItem(
+              items: _stages.map((StageModel stage) {
+                return DropdownMenuItem<StageModel>(
                   value: stage,
                   child: Text(stage.name),
                 );
               }).toList(),
-              onChanged: (stage) {
+              onChanged: (StageModel? stage) {
                 setState(() {
                   _selectedStage = stage;
                   _selectedRoute = null;
@@ -215,7 +222,7 @@ class _SubmitWaitScreenState extends State<SubmitWaitScreen> {
             
             const SizedBox(height: 20),
             
-            // Route selection
+            // Route selection - FIXED with proper typing
             const Text(
               'Select Route',
               style: TextStyle(
@@ -228,18 +235,16 @@ class _SubmitWaitScreenState extends State<SubmitWaitScreen> {
               value: _selectedRoute,
               hint: const Text('Choose a route'),
               isExpanded: true,
-              items: _filteredRoutes.map((route) {
-                return DropdownMenuItem(
+              items: _filteredRoutes.map<DropdownMenuItem<RouteModel>>((RouteModel route) {
+                return DropdownMenuItem<RouteModel>(
                   value: route,
-                  child: Text('${route.number} - ${route.name}'),
+                  child: Text('${route.number} - ${route.name}'), // Uses number field
                 );
               }).toList(),
-              onChanged: _filteredRoutes.isEmpty ? null : (route) {
+              onChanged: _filteredRoutes.isEmpty ? null : (RouteModel? newValue) {
                 setState(() {
-                  _selectedRoute = route;
-                  if (route != null) {
-                    _selectedSacco = route.sacco;
-                  }
+                  _selectedRoute = newValue;
+                  _selectedSacco = newValue?.sacco; // Uses sacco field
                 });
               },
               decoration: const InputDecoration(
@@ -263,13 +268,13 @@ class _SubmitWaitScreenState extends State<SubmitWaitScreen> {
               value: _selectedSacco,
               hint: const Text('Select or confirm Sacco'),
               isExpanded: true,
-              items: AppConstants.saccos.map((sacco) {
-                return DropdownMenuItem(
+              items: AppConstants.saccos.map((String sacco) {
+                return DropdownMenuItem<String>(
                   value: sacco,
                   child: Text(sacco),
                 );
               }).toList(),
-              onChanged: (sacco) {
+              onChanged: (String? sacco) {
                 setState(() {
                   _selectedSacco = sacco;
                 });

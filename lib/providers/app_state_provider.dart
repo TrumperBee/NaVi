@@ -1,9 +1,7 @@
-// ADD THIS IMPORT - it was missing!
-import 'package:provider/provider.dart';
 
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
-import '../models/stage_model.dart';
-import '../models/route_model.dart';
+import 'package:navi_app/models/transport_models.dart';
 import '../utils/constants.dart';
 
 class AppStateProvider extends ChangeNotifier {

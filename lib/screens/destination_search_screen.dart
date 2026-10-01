@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide DistanceCalculator;
 
 // Fix imports - use navi_app
 import 'package:navi_app/utils/constants.dart';
 import 'package:navi_app/data/seed_data.dart';
-import 'package:navi_app/models/stage_model.dart';
-import 'package:navi_app/services/navigation_service.dart';
+import 'package:navi_app/models/transport_models.dart';
+import 'package:navi_app/services/distance_calculator.dart';
+import 'package:navi_app/utils/distance_formatter.dart';
 
 class DestinationSearchScreen extends StatefulWidget {
   const DestinationSearchScreen({super.key});
@@ -17,7 +18,6 @@ class DestinationSearchScreen extends StatefulWidget {
 
 class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
   final TextEditingController _destController = TextEditingController();
-  final NavigationService _navigationService = NavigationService();
   
   List<StageModel> _allStages = [];
   List<StageModel> _filteredStages = [];
@@ -168,8 +168,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
   // Calculate distance from current location to stage
   double _calculateDistanceToStage(StageModel stage) {
     if (_currentPosition == null) return 0;
-    
-    return _navigationService.calculateDistance(
+    return DistanceCalculator.distanceMeters(
       LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
       LatLng(stage.lat, stage.lng),
     );
@@ -178,9 +177,9 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
   // Get estimated walking time to stage
   String _getWalkingTimeToStage(StageModel stage) {
     if (_currentPosition == null) return '';
-    
+
     double distance = _calculateDistanceToStage(stage);
-    int seconds = _navigationService.estimateWalkingTime(distance);
+    int seconds = DistanceCalculator.walkDurationForDistance(distance);
     
     if (seconds < 60) {
       return '$seconds sec walk';
@@ -243,7 +242,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: Colors.grey.withValues(alpha: 0.1),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
@@ -445,7 +444,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
                             leading: Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppConstants.nairobiGreen.withOpacity(0.1),
+                                color: AppConstants.nairobiGreen.withValues(alpha: 0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -496,7 +495,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
                               children: [
                                 if (_currentPosition != null)
                                   Text(
-                                    _navigationService.formatDistance(distance),
+                                    DistanceFormatter.format(distance),
                                     style: const TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
@@ -530,7 +529,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
         });
       },
       backgroundColor: Colors.grey[100],
-      selectedColor: AppConstants.nairobiGreen.withOpacity(0.2),
+      selectedColor: AppConstants.nairobiGreen.withValues(alpha: 0.2),
       labelStyle: const TextStyle(fontSize: 13),
     );
   }

@@ -43,17 +43,18 @@
             </intent-filter>
         </activity>
         
-        <!-- Google Maps API Key (if you decide to use Google Maps later) -->
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="YOUR_GOOGLE_MAPS_API_KEY"/>
-            
         <!-- Location Service Configuration -->
         <service
             android:name="com.example.navi_app.LocationService"
             android:enabled="true"
             android:exported="false" />
         
+        <!-- Mapbox Access Token: injected via MAPBOX_TOKEN gradle property
+             (set in ~/.gradle/gradle.properties; never committed). -->
+        <meta-data
+            android:name="com.mapbox.token"
+            android:value="${MAPBOX_TOKEN}" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

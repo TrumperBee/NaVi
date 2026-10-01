@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:navi_app/utils/constants.dart';
+import 'package:navi_app/services/auth_service.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -10,6 +11,7 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
+  final AuthService _authService = AuthService();
   bool _isLoggingIn = false;
   String? _errorMessage;
 
@@ -20,12 +22,18 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
-      await FirebaseAuth.instance.signInAnonymously();
+      final user = await _authService.signInAnonymously();
+      if (user == null && mounted) {
+        setState(() {
+          _errorMessage = 'Failed to sign in as guest';
+        });
+      }
     } on FirebaseAuthException catch (e) {
       String message;
       switch (e.code) {
         case 'operation-not-allowed':
-          message = 'Anonymous authentication is not enabled. Please enable it in Firebase Console.';
+          message =
+              'Anonymous authentication is not enabled. Please enable it in Firebase Console.';
           break;
         case 'network-request-failed':
           message = 'Network error. Please check your internet connection.';
@@ -47,7 +55,6 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  // Google Sign-In (requires google_sign_in package)
   Future<void> _signInWithGoogle() async {
     setState(() {
       _isLoggingIn = true;
@@ -55,25 +62,17 @@ class _AuthScreenState extends State<AuthScreen> {
     });
 
     try {
-      // TODO: Implement Google Sign-In
-      // This requires adding google_sign_in: ^6.1.0 to pubspec.yaml
-      // And configuring Firebase with your SHA-1 key
-      
-      // For now, show a coming soon message
-      await Future.delayed(const Duration(seconds: 1));
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Google Sign-In coming soon! Using anonymous for now.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+      final user = await _authService.signInWithGoogle();
+
+      if (user == null && mounted) {
+        setState(() {
+          _errorMessage = 'Google Sign-In was cancelled';
+        });
       }
-      
-      // Fallback to anonymous
-      await _signInAnonymously();
-      
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _errorMessage = 'Google Sign-In failed: ${e.message}';
+      });
     } catch (e) {
       setState(() {
         _errorMessage = 'Google Sign-In failed: $e';
@@ -95,7 +94,7 @@ class _AuthScreenState extends State<AuthScreen> {
             end: Alignment.bottomCenter,
             colors: [
               AppConstants.nairobiGreen,
-              AppConstants.nairobiGreen.withOpacity(0.8),
+              AppConstants.nairobiGreen.withValues(alpha: 0.8),
               Colors.white,
             ],
             stops: const [0.0, 0.3, 1.0],
@@ -117,7 +116,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
+                          color: Colors.black.withValues(alpha: 0.1),
                           blurRadius: 20,
                           spreadRadius: 5,
                         ),
@@ -142,7 +141,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  
+
                   // App Name
                   const Text(
                     "NaVi",
@@ -154,12 +153,13 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // Tagline
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(30),
                     ),
                     child: const Text(
@@ -171,9 +171,9 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 60),
-                  
+
                   // Error message if any
                   if (_errorMessage != null)
                     Container(
@@ -197,7 +197,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         ],
                       ),
                     ),
-                  
+
                   // Login options
                   if (_isLoggingIn)
                     const Column(
@@ -237,19 +237,20 @@ class _AuthScreenState extends State<AuthScreen> {
                             elevation: 2,
                           ),
                         ),
-                        
+
                         const SizedBox(height: 16),
-                        
+
                         // Anonymous Sign-In Button
                         OutlinedButton.icon(
                           onPressed: _signInAnonymously,
-                          icon: const Icon(Icons.person_outline, color: Colors.white),
+                          icon: const Icon(Icons.person_outline,
+                              color: Colors.white),
                           label: const Text(
                             'Continue as Guest',
                             style: TextStyle(fontSize: 16, color: Colors.white),
                           ),
                           style: OutlinedButton.styleFrom(
-                            backgroundColor: Colors.white.withOpacity(0.1),
+                            backgroundColor: Colors.white.withValues(alpha: 0.1),
                             minimumSize: const Size(double.infinity, 50),
                             side: const BorderSide(color: Colors.white),
                             shape: RoundedRectangleBorder(
@@ -257,16 +258,16 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                           ),
                         ),
-                        
+
                         const SizedBox(height: 30),
-                        
+
                         // Terms
                         Text(
                           'By continuing, you agree to our Terms of Service and Privacy Policy',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.white.withOpacity(0.7),
+                            color: Colors.white.withValues(alpha: 0.7),
                           ),
                         ),
                       ],

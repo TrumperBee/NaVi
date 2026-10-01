@@ -29,6 +29,13 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Mapbox token is injected rather than committed: project
+        // android/gradle.properties (empty by default) or the developer's
+        // ~/.gradle/gradle.properties / MAPBOX_TOKEN env var supply the value.
+        val mapboxToken = providers.gradleProperty("MAPBOX_TOKEN").orNull
+            ?: System.getenv("MAPBOX_TOKEN").orEmpty()
+        manifestPlaceholders["MAPBOX_TOKEN"] = mapboxToken
     }
 
     buildTypes {

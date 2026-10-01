@@ -1,7 +1,7 @@
 name: navi_app
 description: Nairobi Navigator - Find your way. Know your wait.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -18,9 +18,10 @@ dependencies:
   firebase_core: ^2.24.2
   cloud_firestore: ^4.14.0
   firebase_auth: ^4.16.0
+  google_sign_in: ^6.1.0
   
   # Mapping & Location
-  flutter_map: ^6.1.0
+  mapbox_maps_flutter: ^2.25.0
   latlong2: ^0.9.0
   geolocator: ^10.1.0
   geocoding: ^2.1.0  # For converting coordinates to street names
@@ -31,11 +32,40 @@ dependencies:
   
   # Networking for OSRM (Open Source Routing Machine)
   http: ^1.1.0
+  
+  # NEW: Charts for Analytics Dashboard
+  fl_chart: ^0.66.0
+  
+  # NEW: URL Launcher for Profile Screen (WhatsApp, Email, Instagram)
+  url_launcher: ^6.2.1
+  
+  # NEW: Collections for Priority Queue in Pathfinding
+  collection: ^1.18.0
+  
+  # NEW: Local Storage Persistence
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.1
+  
+  # NEW: Audio for proximity alerts
+  audioplayers: ^6.0.0
+
+  # Phase 5: Persistent settings
+  shared_preferences: ^2.2.2
+
+  # Phase 5: Real text-to-speech for voice guidance
+  flutter_tts: ^4.0.2
+
+  # Phase 5: Dynamic app version (About screen)
+  package_info_plus: ^8.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  integration_test:
+    sdk: flutter
   flutter_lints: ^3.0.0
+  test: ^1.24.9
   # Flutter Launcher Icons - for generating app icons
   flutter_launcher_icons: "^0.13.1"
 
@@ -52,6 +82,7 @@ flutter_launcher_icons:
 flutter:
   uses-material-design: true
   
-  # Assets section to include images
+  # Assets section to include images and sounds
   assets:
     - assets/images/
+    - assets/sounds/

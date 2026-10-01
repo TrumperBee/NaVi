@@ -13,7 +13,7 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = Provider.of<AppStateProvider>(context);
     final user = FirebaseAuth.instance.currentUser;
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Settings"),
@@ -27,7 +27,7 @@ class SettingsScreen extends StatelessWidget {
           _buildSectionHeader("ACCOUNT"),
           ListTile(
             leading: CircleAvatar(
-              backgroundColor: AppConstants.nairobiGreen.withOpacity(0.1),
+              backgroundColor: AppConstants.nairobiGreen.withValues(alpha: 0.1),
               child: Icon(
                 Icons.person_outline,
                 color: AppConstants.nairobiGreen,
@@ -44,7 +44,7 @@ class SettingsScreen extends StatelessWidget {
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
+                color: Colors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -57,14 +57,14 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           // Navigation Preferences
           _buildSectionHeader("NAVIGATION PREFERENCES"),
           SwitchListTile(
             secondary: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.1),
+                color: Colors.amber.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.traffic, color: Colors.amber),
@@ -79,10 +79,10 @@ class SettingsScreen extends StatelessWidget {
             secondary: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                color: Colors.green.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.walk, color: Colors.green),
+              child: const Icon(Icons.directions_walk, color: Colors.green),
             ),
             title: const Text("Prefer walking paths"),
             subtitle: const Text("Use pedestrian-friendly routes"),
@@ -94,7 +94,7 @@ class SettingsScreen extends StatelessWidget {
             secondary: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
+                color: Colors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.satellite, color: Colors.blue),
@@ -105,16 +105,16 @@ class SettingsScreen extends StatelessWidget {
             onChanged: (val) {},
             activeColor: AppConstants.nairobiGreen,
           ),
-          
+
           // App Preferences
           _buildSectionHeader("APP PREFERENCES"),
           SwitchListTile(
             secondary: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: appState.isDarkTheme 
-                    ? Colors.grey.withOpacity(0.1)
-                    : Colors.amber.withOpacity(0.1),
+                color: appState.isDarkTheme
+                    ? Colors.grey.withValues(alpha: 0.1)
+                    : Colors.amber.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
@@ -123,7 +123,8 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             title: const Text("Dark Mode"),
-            subtitle: Text(appState.isDarkTheme ? "Nairobi Night" : "Nairobi Day"),
+            subtitle:
+                Text(appState.isDarkTheme ? "Nairobi Night" : "Nairobi Day"),
             value: appState.isDarkTheme,
             onChanged: (val) => appState.toggleTheme(),
             activeColor: AppConstants.nairobiGreen,
@@ -132,7 +133,7 @@ class SettingsScreen extends StatelessWidget {
             secondary: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
+                color: Colors.red.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.notifications, color: Colors.red),
@@ -147,7 +148,7 @@ class SettingsScreen extends StatelessWidget {
             secondary: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.purple.withOpacity(0.1),
+                color: Colors.purple.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.location_on, color: Colors.purple),
@@ -158,14 +159,14 @@ class SettingsScreen extends StatelessWidget {
             onChanged: (val) => appState.toggleLocationSharing(),
             activeColor: AppConstants.nairobiGreen,
           ),
-          
+
           // Data Management
           _buildSectionHeader("DATA MANAGEMENT"),
           ListTile(
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
+                color: Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.history, color: Colors.orange),
@@ -178,7 +179,8 @@ class SettingsScreen extends StatelessWidget {
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text("Clear History"),
-                  content: const Text("Are you sure you want to delete all your journey history?"),
+                  content: const Text(
+                      "Are you sure you want to delete all your journey history?"),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
@@ -206,7 +208,7 @@ class SettingsScreen extends StatelessWidget {
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.1),
+                color: Colors.teal.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.download, color: Colors.teal),
@@ -220,14 +222,14 @@ class SettingsScreen extends StatelessWidget {
               );
             },
           ),
-          
+
           // About Section
           _buildSectionHeader("ABOUT"),
           ListTile(
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppConstants.nairobiGreen.withOpacity(0.1),
+                color: AppConstants.nairobiGreen.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
@@ -252,7 +254,7 @@ class SettingsScreen extends StatelessWidget {
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
+                color: Colors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.star, color: Colors.blue),
@@ -270,7 +272,7 @@ class SettingsScreen extends StatelessWidget {
             leading: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.purple.withOpacity(0.1),
+                color: Colors.purple.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(Icons.share, color: Colors.purple),
@@ -284,9 +286,9 @@ class SettingsScreen extends StatelessWidget {
               );
             },
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           // Sign Out Button (only for non-anonymous users or always show)
           Padding(
             padding: const EdgeInsets.all(16),
@@ -309,7 +311,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          
+
           const SizedBox(height: 20),
         ],
       ),
@@ -320,7 +322,7 @@ class SettingsScreen extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
-        title, 
+        title,
         style: TextStyle(
           color: Colors.grey[600],
           fontWeight: FontWeight.bold,

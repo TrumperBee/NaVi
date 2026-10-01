@@ -45,5 +45,16 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>NaVi uses your location to show your position on the map and provide navigation directions.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>NaVi uses your location in the background to track your journey progress.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>NaVi uses your location in the background to track your journey progress.</string>
+	<!-- Mapbox token is injected at build time; kept empty here so the secret
+	     never lands in the repo. Supply via --dart-define=MAPBOX_TOKEN or an
+	     .xcconfig in real iOS builds. -->
+	<key>MBXAccessToken</key>
+	<string></string>
 </dict>
 </plist>

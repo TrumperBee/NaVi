@@ -1,30 +1,133 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:navi_app/main.dart';
+import 'package:navi_app/models/transport_models.dart';
+import 'package:navi_app/models/wait_report_model.dart';
+import 'package:navi_app/data/seed_data.dart';
+import 'package:navi_app/core/constants.dart';
+import 'package:navi_app/features/matatu/engines/fare_estimation_engine.dart';
+import 'package:navi_app/features/matatu/engines/route_matching_engine.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('Models', () {
+    test('StageModel creates from map correctly', () {
+      final map = {
+        'id': 'test_stage',
+        'name': 'Test Stage',
+        'lat': -1.2833,
+        'lng': 36.8167,
+        'corridor': 'CBD',
+        'routes': ['44', '45'],
+        'saccos': ['Super Metro'],
+        'area': 'Nairobi CBD',
+      };
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      final stage = StageModel.fromMap(map, 'test_stage');
+      expect(stage.id, equals('test_stage'));
+      expect(stage.name, equals('Test Stage'));
+      expect(stage.corridor, equals('CBD'));
+      expect(stage.routes, contains('44'));
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('RouteModel creates from map correctly', () {
+      final map = {
+        'id': 'route_44',
+        'number': '44',
+        'name': 'CBD - Githurai',
+        'corridor': 'Thika Road',
+        'majorStops': ['Kencom', 'Githurai'],
+        'sacco': 'Super Metro',
+      };
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      final route = RouteModel.fromMap(map, 'route_44');
+      expect(route.number, equals('44'));
+      expect(route.name, equals('CBD - Githurai'));
+      expect(route.sacco, equals('Super Metro'));
+    });
+
+    test('WaitReportModel creates from map correctly', () {
+      final now = DateTime.now();
+      final map = {
+        'stage_id': 'kencom',
+        'route_id': 'route_44',
+        'wait_time': 5,
+        'timestamp': now,
+        'day_of_week': now.weekday,
+        'hour_of_day': now.hour,
+        'user_id': 'test_user',
+      };
+
+      final report = WaitReportModel.fromMap(map, 'report_1');
+      expect(report.stageId, equals('kencom'));
+      expect(report.waitTime, equals(5));
+    });
+  });
+
+  group('SeedData', () {
+    test('returns stages list', () {
+      final stages = SeedData.getStages();
+      expect(stages, isNotEmpty);
+      expect(stages.length, greaterThan(20));
+    });
+
+    test('returns routes list', () {
+      final routes = SeedData.getRoutes();
+      expect(routes, isNotEmpty);
+      expect(routes.length, greaterThan(15));
+    });
+
+    test('getStagesByCorridor filters correctly', () {
+      final cbdStages = SeedData.getStagesByCorridor('CBD');
+      expect(cbdStages, isNotEmpty);
+      for (final stage in cbdStages) {
+        expect(stage.corridor, equals('CBD'));
+      }
+    });
+  });
+
+  group('AppConstants', () {
+    test('has Nairobi green color', () {
+      expect(AppConstants.nairobiGreen, isNotNull);
+    });
+
+    test('has app name', () {
+      expect(AppConstants.appName, equals('NaVi'));
+    });
+
+    test('has corridors defined', () {
+      expect(AppConstants.corridors, isNotEmpty);
+      expect(AppConstants.corridors.keys, contains('Thika Road'));
+    });
+  });
+
+  group('FareEstimationEngine', () {
+    test('calculates base fare correctly', () {
+      final engine = FareEstimationEngine();
+      final fare = engine.estimateFare(5.0);
+      expect(fare, greaterThan(0));
+      expect(fare, equals(100.0)); // 50 + (5 * 10)
+    });
+
+    test('applies peak hour multiplier', () {
+      final engine = FareEstimationEngine();
+      final normalFare = engine.estimateFare(5.0, isPeakHour: false);
+      final peakFare = engine.estimateFare(5.0, isPeakHour: true);
+      expect(peakFare, greaterThan(normalFare));
+    });
+  });
+
+  group('RouteMatchingEngine', () {
+    test('finds routes by corridor', () {
+      final engine = RouteMatchingEngine();
+      final routes = engine.findRoutesByCorridor('Thika Road');
+      expect(routes, isNotEmpty);
+      for (final route in routes) {
+        expect(route.corridor, equals('Thika Road'));
+      }
+    });
+
+    test('searches routes by query', () {
+      final engine = RouteMatchingEngine();
+      final results = engine.searchRoutes('44');
+      expect(results, isNotEmpty);
+    });
   });
 }

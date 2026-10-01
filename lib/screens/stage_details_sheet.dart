@@ -1,25 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide DistanceCalculator;
+import 'dart:math' show max;
 
 // Fix imports - use navi_app
-import 'package:navi_app/models/stage_model.dart';
-import 'package:navi_app/models/route_model.dart';
+import 'package:navi_app/models/transport_models.dart';
 import 'package:navi_app/services/prediction_service.dart';
 import 'package:navi_app/services/database_service.dart';
-import 'package:navi_app/services/navigation_service.dart';
 import 'package:navi_app/providers/app_state_provider.dart';
 import 'package:navi_app/utils/constants.dart';
-import 'package:navi_app/screens/submit_wait_screen.dart';
+import 'package:navi_app/data/seed_data.dart';
+import 'package:navi_app/services/distance_calculator.dart';
+import 'package:navi_app/utils/distance_formatter.dart';
+import 'package:navi_app/design/navi_colors.dart';
+import 'package:navi_app/design/navi_typography.dart';
 
 class StageDetailsSheet extends StatefulWidget {
   final StageModel stage;
   final VoidCallback? onNavigate; // Callback for navigation
 
+  /// The user's CURRENT live GPS position, passed down from the home screen's
+  /// location stream. Both this sheet and the home screen compute distance
+  /// from this same value so their numbers always agree.
+  final LatLng? userLocation;
+
   const StageDetailsSheet({
-    super.key, 
+    super.key,
     required this.stage,
     this.onNavigate, // Add this
+    this.userLocation,
   });
 
   @override
@@ -29,30 +38,22 @@ class StageDetailsSheet extends StatefulWidget {
 class _StageDetailsSheetState extends State<StageDetailsSheet> {
   final DatabaseService _databaseService = DatabaseService();
   final PredictionService _predictionService = PredictionService();
-  final NavigationService _navigationService = NavigationService();
-  
+
   List<RouteModel> _routes = [];
   RouteModel? _selectedRoute;
   bool _isLoadingRoutes = true;
   bool _isLoadingPrediction = false;
   Map<String, dynamic>? _predictionResult;
-  String? _errorMessage;
-  
-  // Distance from user if available
-  double? _distanceFromUser;
-  int? _walkingTime;
 
   @override
   void initState() {
     super.initState();
     _loadRoutes();
-    _calculateDistance();
   }
 
   Future<void> _loadRoutes() async {
     setState(() {
       _isLoadingRoutes = true;
-      _errorMessage = null;
     });
 
     try {
@@ -69,9 +70,15 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
         }
       });
     } catch (e) {
+      print('Failed to load routes from Firestore: $e, using SeedData');
+      final fallbackRoutes = SeedData.getRoutesForStage(widget.stage.id);
       setState(() {
+        _routes = fallbackRoutes;
         _isLoadingRoutes = false;
-        _errorMessage = 'Failed to load routes: $e';
+        if (_routes.isNotEmpty) {
+          _selectedRoute = _routes.first;
+          _loadPrediction(_routes.first);
+        }
       });
     }
   }
@@ -95,37 +102,29 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
     } catch (e) {
       setState(() {
         _isLoadingPrediction = false;
-        _errorMessage = 'Failed to load prediction: $e';
       });
     }
   }
 
-  // Calculate distance from user to this stage
-  Future<void> _calculateDistance() async {
-    // In a real app, you'd get user location from provider or geolocator
-    // For now, we'll use a sample location (CBD)
-    try {
-      // This would come from your location service
-      // For demo, using CBD coordinates
-      LatLng userLocation = const LatLng(-1.2833, 36.8167);
-      LatLng stageLocation = LatLng(widget.stage.lat, widget.stage.lng);
-      
-      double distance = _navigationService.calculateDistance(userLocation, stageLocation);
-      int time = _navigationService.estimateWalkingTime(distance);
-      
-      setState(() {
-        _distanceFromUser = distance;
-        _walkingTime = time;
-      });
-    } catch (e) {
-      print('Error calculating distance: $e');
-    }
+  /// "How far + how long to walk" to this stage, computed from the SAME live
+  /// position the home screen uses, via the single shared
+  /// [DistanceCalculator]. No independent GPS fetch and no hardcoded fallback
+  /// coordinate — so this sheet always agrees with the nearest-stage card.
+  WalkDistanceResult? get _walkDistance {
+    final user = widget.userLocation;
+    if (user == null) return null;
+    return DistanceCalculator.walkingDistanceAndTime(
+      user,
+      LatLng(widget.stage.lat, widget.stage.lng),
+    );
   }
 
   void _navigateToSubmit() {
-    Navigator.pop(context); // Close bottom sheet
-    Navigator.pushNamed(
-      context,
+    // Capture the navigator before popping so the push uses the same (root)
+    // instance after the sheet route is removed.
+    final navigator = Navigator.of(context);
+    navigator.pop(); // Close bottom sheet
+    navigator.pushNamed(
       '/submit',
       arguments: widget.stage,
     );
@@ -144,18 +143,14 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
   void _handleNavigate() {
     Navigator.pop(context); // Close bottom sheet
     if (widget.onNavigate != null) {
-      widget.onNavigate!(); // Call the navigation callback
+      widget.onNavigate!();
     } else {
-      // Default behavior if no callback provided
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Navigation feature coming soon!'),
-        ),
-      );
+      print('Navigate pressed but no onNavigate callback provided');
     }
   }
 
   Widget _buildHeader() {
+    final walk = _walkDistance;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -170,7 +165,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.5),
+                color: Colors.white.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -181,7 +176,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -208,7 +203,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
                       widget.stage.corridor,
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.white.withOpacity(0.8),
+                        color: Colors.white.withValues(alpha: 0.8),
                       ),
                     ),
                   ],
@@ -216,24 +211,24 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
               ),
             ],
           ),
-          if (_distanceFromUser != null) ...[
+          if (walk != null) ...[
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.directions_walk, size: 16, color: Colors.white.withOpacity(0.9)),
+                  Icon(Icons.directions_walk, size: 16, color: Colors.white.withValues(alpha: 0.9)),
                   const SizedBox(width: 4),
                   Text(
-                    '${_navigationService.formatDistance(_distanceFromUser!)} · ${_navigationService.formatTime(_walkingTime!)} walk',
+                    '${DistanceFormatter.format(walk.distanceMeters)} · ${max(1, (walk.walkDuration / 60).round())} min walk',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                     ),
                   ),
                 ],
@@ -280,13 +275,18 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
               label: Text(
                 route.number,
                 style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.black87,
+                  color: isSelected
+                      ? Colors.white
+                      : NaviColors.textPrimary(
+                          Theme.of(context).brightness == Brightness.dark),
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 ),
               ),
               selected: isSelected,
               onSelected: (_) => _selectRoute(route),
-              backgroundColor: Colors.grey[100],
+              backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? NaviColors.dividerDark
+                  : Colors.grey[100],
               selectedColor: AppConstants.nairobiGreen,
               checkmarkColor: Colors.white,
               shape: RoundedRectangleBorder(
@@ -299,7 +299,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
     );
   }
 
-  Widget _buildPredictionCard() {
+  Widget _buildWaitTimeCard() {
     if (_isLoadingPrediction) {
       return const Center(
         child: Padding(
@@ -309,186 +309,60 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
       );
     }
 
-    if (_predictionResult == null) {
-      return const SizedBox.shrink();
-    }
+    // Plain commuter language, never statistics. If the prediction is only a
+    // synthetic default (no real reports yet), admit it honestly instead of
+    // showing fabricated-looking precise numbers.
+    final prediction = _predictionResult;
+    final hasRealReports = prediction != null &&
+        ((prediction['reportCount'] as int?) ?? 0) > 0;
+    final rawData = prediction?['data'];
+    final lower = rawData is Map ? (rawData['lower'] as num?)?.toDouble() : null;
+    final upper = rawData is Map ? (rawData['upper'] as num?)?.toDouble() : null;
 
-    final data = _predictionResult!['data'] as Map<String, double>;
-    final source = _predictionResult!['source'] as String;
-    final confidence = _predictionResult!['confidence'] as String;
-    final reportCount = _predictionResult!['reportCount'] as int;
-    final recommendation = _predictionResult!['recommendation'] as String;
-
-    // Determine confidence color
-    Color confidenceColor;
-    switch (confidence) {
-      case 'High':
-        confidenceColor = Colors.green;
-        break;
-      case 'Medium':
-        confidenceColor = Colors.orange;
-        break;
-      case 'Low':
-      case 'Very Low':
-        confidenceColor = Colors.red;
-        break;
-      default:
-        confidenceColor = Colors.grey;
+    final String message;
+    if (hasRealReports && lower != null && upper != null) {
+      message =
+          'Matatus arrive every ${lower.round()}–${upper.round()} min';
+    } else {
+      message = 'Wait time data coming soon';
     }
 
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: NaviColors.surface(
+            Theme.of(context).brightness == Brightness.dark),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Theme.of(context).brightness == Brightness.dark
+                ? Colors.black.withValues(alpha: 0.4)
+                : Colors.grey.withValues(alpha: 0.1),
             blurRadius: 10,
             spreadRadius: 2,
           ),
         ],
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(
+            color: NaviColors.dividerC(
+                Theme.of(context).brightness == Brightness.dark)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Expected Wait Time',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: confidenceColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: confidenceColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$confidence Confidence',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: confidenceColor,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          Icon(
+            Icons.schedule,
+            size: 20,
+            color: AppConstants.nairobiGreen,
           ),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                '${data['mean']?.toStringAsFixed(0) ?? '?'}',
-                style: const TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: AppConstants.nairobiGreen,
-                ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: NaviType.body.copyWith(
+                color: NaviColors.textSecondary(
+                    Theme.of(context).brightness == Brightness.dark),
               ),
-              const SizedBox(width: 4),
-              const Text(
-                'min',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    const Text(
-                      '80% CI',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    Text(
-                      '${data['lower']?.toStringAsFixed(0)}-${data['upper']?.toStringAsFixed(0)} min',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 20,
-                  color: AppConstants.nairobiGreen,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    recommendation,
-                    style: const TextStyle(
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Source: $source',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-              Text(
-                '$reportCount reports',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -546,9 +420,12 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: NaviColors.surface(
+            Theme.of(context).brightness == Brightness.dark),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[200]!),
+        border: Border.all(
+            color: NaviColors.dividerC(
+                Theme.of(context).brightness == Brightness.dark)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -558,7 +435,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
               Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: AppConstants.nairobiGreen.withOpacity(0.1),
+                  color: AppConstants.nairobiGreen.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -573,8 +450,10 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
               Expanded(
                 child: Text(
                   _selectedRoute!.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
+                    color: NaviColors.textPrimary(
+                        Theme.of(context).brightness == Brightness.dark),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -586,13 +465,17 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
           // Sacco info
           Row(
             children: [
-              Icon(Icons.business, size: 14, color: Colors.grey[600]),
+              Icon(Icons.business,
+                  size: 14,
+                  color: NaviColors.textSecondary(
+                      Theme.of(context).brightness == Brightness.dark)),
               const SizedBox(width: 4),
               Text(
                 _selectedRoute!.sacco,
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.grey[700],
+                  color: NaviColors.textPrimary(
+                      Theme.of(context).brightness == Brightness.dark),
                 ),
               ),
             ],
@@ -604,7 +487,8 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
               _selectedRoute!.description!,
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey[600],
+                color: NaviColors.textSecondary(
+                    Theme.of(context).brightness == Brightness.dark),
               ),
             ),
           ],
@@ -612,12 +496,13 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
           const SizedBox(height: 12),
           
           // Major stops
-          const Text(
+          Text(
             'Major Stops:',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
-              color: Colors.grey,
+              color: NaviColors.textSecondary(
+                  Theme.of(context).brightness == Brightness.dark),
             ),
           ),
           const SizedBox(height: 4),
@@ -628,13 +513,20 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: NaviColors.surface(
+                      Theme.of(context).brightness == Brightness.dark),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
+                  border: Border.all(
+                      color: NaviColors.dividerC(
+                          Theme.of(context).brightness == Brightness.dark)),
                 ),
                 child: Text(
                   stop,
-                  style: const TextStyle(fontSize: 11),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: NaviColors.textPrimary(
+                        Theme.of(context).brightness == Brightness.dark),
+                  ),
                 ),
               );
             }).toList(),
@@ -653,8 +545,9 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
       expand: false,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
+          decoration: BoxDecoration(
+            color: NaviColors.surface(
+                Theme.of(context).brightness == Brightness.dark),
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -667,33 +560,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
                   children: [
                     const SizedBox(height: 16),
                     _buildRouteChips(),
-                    
-                    if (_errorMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.red.shade200),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.error, color: Colors.red, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _errorMessage!,
-                                  style: const TextStyle(color: Colors.red),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    
-                    _buildPredictionCard(),
+                    _buildWaitTimeCard(),
                     _buildRouteInfo(),
                     _buildActionButtons(),
                     

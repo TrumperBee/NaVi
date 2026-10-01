@@ -1,9 +1,10 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/wait_report_model.dart';
-import '../models/stage_model.dart';
-import '../models/route_model.dart';
-import '../data/seed_data.dart';
+
+// FIXED: Import the correct model file
+import 'package:navi_app/models/transport_models.dart';
+import 'package:navi_app/models/wait_report_model.dart';
+import 'package:navi_app/data/seed_data.dart';
 
 class PredictionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -37,12 +38,12 @@ class PredictionService {
   Map<String, double> calculateConfidenceInterval(List<WaitReportModel> reports) {
     if (reports.isEmpty) {
       return {
-        'mean': 0,
-        'lower': 0,
-        'upper': 0,
-        'margin': 0,
-        'stdDev': 0,
-        'count': 0,
+        'mean': 0.0,
+        'lower': 0.0,
+        'upper': 0.0,
+        'margin': 0.0,
+        'stdDev': 0.0,
+        'count': 0.0,
       };
     }
     
@@ -55,7 +56,7 @@ class PredictionService {
         'mean': mean,
         'lower': mean,
         'upper': mean,
-        'margin': 0,
+        'margin': 0.0,
         'stdDev': stdDev,
         'count': n,
       };
@@ -135,18 +136,25 @@ class PredictionService {
         lat: 0,
         lng: 0,
         corridor: 'Unknown',
+        routes: const [], // Empty list for fallback
       ),
     );
     
+    // FIXED: RouteModel fallback with all required fields and const for majorStops
     final route = SeedData.getRoutes().firstWhere(
       (r) => r.id == routeId,
       orElse: () => RouteModel(
         id: routeId,
         number: 'Unknown',
-        name: 'Unknown',
+        name: 'Unknown Route',
         corridor: 'Unknown',
-        majorStops: [],
+        majorStops: const [], // FIXED: Added 'const'
         sacco: 'Unknown',
+        description: 'Fallback route',
+        distance: 0.0,
+        baseFare: 0.0,
+        estimatedTime: 0,
+        trafficLevel: 'medium',
       ),
     );
 
@@ -277,15 +285,17 @@ class PredictionService {
         lat: 0,
         lng: 0,
         corridor: 'Unknown',
+        routes: const [], // Empty list for fallback
       ),
     );
 
     // If no routeIds provided, get all routes for this stage
-    final routesToCheck = routeIds ?? stage.routes ?? [];
+    final routesToCheck = routeIds ?? stage.routes;
     
     List<Future<Map<String, dynamic>>> predictions = [];
     for (String routeId in routesToCheck) {
       // Find actual route ID from route number
+      // FIXED: RouteModel fallback with all required fields and const for majorStops
       final route = SeedData.getRoutes().firstWhere(
         (r) => r.number == routeId,
         orElse: () => RouteModel(
@@ -293,8 +303,13 @@ class PredictionService {
           number: routeId,
           name: 'Route $routeId',
           corridor: stage.corridor,
-          majorStops: [],
+          majorStops: const [], // FIXED: Added 'const'
           sacco: 'Unknown',
+          description: 'Fallback route',
+          distance: 0.0,
+          baseFare: 0.0,
+          estimatedTime: 0,
+          trafficLevel: 'medium',
         ),
       );
       

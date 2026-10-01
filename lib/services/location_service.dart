@@ -1,13 +1,22 @@
-import 'dart:math'; // Fixes sin, cos, pi, sqrt, etc.
-import 'dart:async'; // Fixes StreamSubscription
+import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:latlong2/latlong.dart'; // Fixes LatLng
+import 'package:latlong2/latlong.dart';
+import 'package:navi_app/utils/geo_utils.dart';
 
 class LocationService {
   static final LocationService _instance = LocationService._internal();
   factory LocationService() => _instance;
   LocationService._internal();
+
+  bool _highAccuracy = true;
+
+  void setHighAccuracy(bool enabled) {
+    _highAccuracy = enabled;
+  }
+
+  LocationAccuracy get _accuracy =>
+      _highAccuracy ? LocationAccuracy.bestForNavigation : LocationAccuracy.medium;
 
   // Get current position with best accuracy for navigation
   Future<Position> getCurrentPosition() async {
@@ -30,9 +39,8 @@ class LocationService {
       throw Exception('Location services are disabled');
     }
 
-    // Force High Accuracy - best for street-level navigation
     return await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.bestForNavigation, // Essential for street-level
+      desiredAccuracy: _accuracy,
     );
   }
 
@@ -120,12 +128,11 @@ class LocationService {
   // Start live tracking with real-time updates
   Stream<Position> startLiveTracking({
     double distanceFilter = 5, // Update every 5 meters
-    LocationAccuracy accuracy = LocationAccuracy.bestForNavigation,
+    LocationAccuracy? accuracy,
   }) {
     return Geolocator.getPositionStream(
       locationSettings: LocationSettings(
-        accuracy: accuracy,
-        // FIXED: Convert double to int using .toInt()
+        accuracy: accuracy ?? _accuracy,
         distanceFilter: distanceFilter.toInt(),
       ),
     );
@@ -133,29 +140,21 @@ class LocationService {
 
   // Calculate distance between two points (Haversine formula)
   double calculateDistance(LatLng start, LatLng end) {
-    const double R = 6371000; // Earth's radius in meters
-    double lat1 = start.latitude * pi / 180;
-    double lat2 = end.latitude * pi / 180;
-    double deltaLat = (end.latitude - start.latitude) * pi / 180;
-    double deltaLng = (end.longitude - start.longitude) * pi / 180;
-
-    double a = sin(deltaLat / 2) * sin(deltaLat / 2) +
-               cos(lat1) * cos(lat2) *
-               sin(deltaLng / 2) * sin(deltaLng / 2);
-    
-    // FIXED: Force double conversion
-    double c = 2 * atan2(sqrt(a), sqrt(1 - a)).toDouble();
-
-    return R * c;
+    return haversineDistance(
+      start.latitude, start.longitude,
+      end.latitude, end.longitude,
+    );
   }
 
   // Format distance for display
-  String formatDistance(double meters) {
-    if (meters < 1000) {
-      return '${meters.round()} m';
-    } else {
-      return '${(meters / 1000).toStringAsFixed(1)} km';
+  String formatDistance(double meters, {String unit = 'km'}) {
+    if (unit == 'mi') {
+      final miles = meters / 1609.344;
+      if (miles >= 1) return '${miles.toStringAsFixed(1)} mi';
+      return '${(meters / 0.3048).round()} ft';
     }
+    if (meters < 1000) return '${meters.round()} m';
+    return '${(meters / 1000).toStringAsFixed(1)} km';
   }
 
   // Estimate walking time (5 km/h average walking speed)
