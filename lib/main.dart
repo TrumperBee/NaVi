@@ -21,6 +21,7 @@ import 'viewmodels/active_journey_viewmodel.dart';
 import 'core/constants.dart';
 import 'core/theme.dart';
 import 'services/database/local_storage_service.dart';
+import 'services/gtfs_import_service.dart';
 
 import 'models/transport_models.dart';
 import 'features/settings/settings_screen.dart';
@@ -38,6 +39,15 @@ void main() async {
   }
 
   await LocalStorageService().init();
+
+  // One-time GTFS bundle import into the app's Hive cache (stages + routes).
+  // Cheap on first run, a no-op after, and it guarantees fresh installs boot
+  // straight onto the real 2,770+ stop universe.
+  try {
+    await GtfsImportService.loadBundledGtfsData();
+  } catch (e, st) {
+    print('GTFS import failed: $e\n$st');
+  }
 
   runApp(const MyApp());
 }

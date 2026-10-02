@@ -4,6 +4,7 @@ import 'package:navi_app/data/nairobi_corridors_seed.dart';
 import 'package:navi_app/data/nairobi_stages_seed.dart';
 import 'package:navi_app/models/search_result.dart';
 import 'package:navi_app/services/geocoding_service.dart';
+import 'package:navi_app/services/stage_registry.dart';
 
 const double kMaxCorridorSnapMeters = 400.0;
 const double kFuzzyMatchThreshold = 0.85;
@@ -11,7 +12,10 @@ const int kLevenshteinTolerance = 2;
 
 class CorridorResolver {
   static final Map<int, CorridorData> _corridors = nairobiCorridors;
-  static final List<StageData> _allStages = nairobiStages;
+
+  /// Full stop universe for name/geographic resolution. Reads the runtime
+  /// registry: the GTFS universe once imported, the curated seed otherwise.
+  static List<StageData> get _allStages => StageRegistry.all;
 
   static CorridorData? findNearestCorridor(double lat, double lng) {
     CorridorData? nearest;

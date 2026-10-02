@@ -4,8 +4,8 @@ import 'package:latlong2/latlong.dart' hide DistanceCalculator;
 
 // Fix imports - use navi_app
 import 'package:navi_app/utils/constants.dart';
-import 'package:navi_app/data/seed_data.dart';
 import 'package:navi_app/models/transport_models.dart';
+import 'package:navi_app/services/stage_registry.dart';
 import 'package:navi_app/services/distance_calculator.dart';
 import 'package:navi_app/utils/distance_formatter.dart';
 
@@ -21,6 +21,7 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
   
   List<StageModel> _allStages = [];
   List<StageModel> _filteredStages = [];
+  List<String> _searchIndex = [];
   
   Position? _currentPosition;
   String _locationStatus = 'Getting your location...';
@@ -33,7 +34,23 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
   @override
   void initState() {
     super.initState();
-    _allStages = SeedData.getStages();
+    _allStages = StageRegistry.all.map((s) => StageModel(
+          id: s.id,
+          name: s.name,
+          lat: s.lat,
+          lng: s.lng,
+          corridor: s.corridorId,
+          routes: s.routeNumbers,
+          area: s.area,
+        )).toList();
+    _searchIndex = _allStages.map((s) {
+      final parts = [s.name, s.corridor, s.area ?? ''];
+      parts.addAll(s.routes ?? const []);
+      return parts
+          .where((p) => p.isNotEmpty)
+          .map((p) => p.toLowerCase())
+          .join(' ');
+    }).toList();
     _getCurrentLocation();
   }
 
@@ -94,21 +111,16 @@ class _DestinationSearchScreenState extends State<DestinationSearchScreen> {
       return;
     }
 
-    // Logic: User types destination, we find the CBD stage that goes there
+    // Logic: User types destination, we find the CBD stage that goes there.
+    // Filtering runs against a precomputed lowercase index (name / corridor /
+    // area / routes) built once in initState so typing over the 2,771-stage
+    // GTFS universe stays cheap.
+    final lowerQuery = query.toLowerCase();
     setState(() {
-      _filteredStages = _allStages.where((stage) {
-        // Check if destination name matches any stage or the routes it serves
-        final nameMatch = stage.name.toLowerCase().contains(query.toLowerCase());
-        final corridorMatch = stage.corridor.toLowerCase().contains(query.toLowerCase());
-        final areaMatch = stage.area?.toLowerCase().contains(query.toLowerCase()) ?? false;
-        
-        // Also check if any route served by this stage matches the query
-        final routeMatch = stage.routes?.any((route) => 
-          route.toLowerCase().contains(query.toLowerCase())
-        ) ?? false;
-        
-        return nameMatch || corridorMatch || areaMatch || routeMatch;
-      }).toList();
+      _filteredStages = <StageModel>[
+        for (int i = 0; i < _allStages.length; i++)
+          if (_searchIndex[i].contains(lowerQuery)) _allStages[i]
+      ];
     });
   }
 

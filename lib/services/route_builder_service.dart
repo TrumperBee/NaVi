@@ -6,6 +6,7 @@ import 'package:navi_app/models/active_journey.dart';
 import 'package:navi_app/models/route_segment.dart';
 import 'package:navi_app/models/search_result.dart';
 import 'package:navi_app/services/fare_calculator_service.dart';
+import 'package:navi_app/services/stage_registry.dart';
 
 class RouteBuilderService {
   static const double kMatatuAvgSpeedKmh = 20.0;
@@ -70,10 +71,6 @@ class RouteBuilderService {
       throw ArgumentError('Could not find a boarding stage near the origin');
     }
     final boardingCorridor = _findCorridorById(boardingStage.corridorId);
-    if (boardingCorridor == null) {
-      throw ArgumentError(
-          'Could not find corridor for boarding stage: ${boardingStage.name}');
-    }
 
     // Alighting stage: anchored to the DESTINATION. The user's exact stage
     // pick (e.g. via the Stage Details sheet) wins when it is a real pick;
@@ -100,13 +97,25 @@ class RouteBuilderService {
     final boardingCoord = boardingStage.location;
     final alightingCoord = alightingStage.location;
 
+    // No-corridor guard: GTFS-only stages may carry no corridor id yet
+    // (nothing to slice, no corridor to ride). Ride straight between the two
+    // stage coords instead of crashing on a missing corridor.
+    if (boardingCorridor == null || alightingCorridor == null) {
+      return _buildDirectStageRide(
+        origin,
+        destinationCoord,
+        destination.resolvedLabel,
+        boardingStage,
+        alightingStage,
+      );
+    }
+
     // "Avoid busy junctions": when the boarding corridor is a known busy
     // hotspot but the destination rides a quieter corridor within walking
     // reach of the origin, walk straight to the quieter corridor's nearest
     // stage instead of muscling into the busy junction — a real (if static)
     // re-route around the worst of Nairobi's corridor congestion.
     if (avoidBusyJunctions &&
-        alightingCorridor != null &&
         boardingStage.corridorId != alightingCorridor.id &&
         kBusyCorridorIds.contains(boardingStage.corridorId) &&
         !kBusyCorridorIds.contains(alightingCorridor.id)) {
@@ -146,7 +155,7 @@ class RouteBuilderService {
         boardingStage,
         alightingStage,
         boardingCorridor,
-        alightingCorridor!,
+        alightingCorridor,
       ));
     }
 
@@ -174,6 +183,46 @@ class RouteBuilderService {
         _walkSegment('Walk to $destLabel', origin, destination),
       ],
     );
+  }
+
+  /// Ride straight between an origin stage and an alighting stage when at least
+  /// one of them has no assigned corridor (GTFS-only stop with no polyline to
+  /// slice). Uses the direct great-circle line between the two stage coords.
+  static ActiveJourney _buildDirectStageRide(
+    LatLng origin,
+    LatLng destinationCoord,
+    String destLabel,
+    StageData boardingStage,
+    StageData alightingStage,
+  ) {
+    final segments = <RouteSegment>[];
+    final boardingCoord = boardingStage.location;
+    final alightingCoord = alightingStage.location;
+
+    final walkToStage =
+        _walkSegment('Walk to ${boardingStage.name}', origin, boardingCoord);
+    if (walkToStage.distanceMeters >= 1.0) segments.add(walkToStage);
+
+    final rideCoords = [boardingCoord, alightingCoord];
+    if (rideCoords.length >= 2 && _pathLength(rideCoords) >= 1.0) {
+      final route = _getPrimaryRoute(boardingStage, alightingStage);
+      segments.add(_matatuSegment(
+        'Ride Route $route to ${alightingStage.name}',
+        route,
+        rideCoords,
+        boardingCoord,
+        alightingCoord,
+      ));
+    }
+
+    final walkFromStage = _walkSegment(
+        'Walk to $destLabel', alightingCoord, destinationCoord);
+    if (walkFromStage.distanceMeters >= 1.0) segments.add(walkFromStage);
+
+    if (segments.isEmpty) {
+      return _walkOnlyRoute(origin, destinationCoord, destLabel);
+    }
+    return ActiveJourney(segments: segments);
   }
 
   /// Re-routes a trip whose boarding corridor is a busy hotspot onto the
@@ -273,7 +322,7 @@ class RouteBuilderService {
   }
 
   static StageData? _findStageById(String name) {
-    for (final stage in nairobiStages) {
+    for (final stage in StageRegistry.all) {
       if (stage.name == name) return stage;
     }
     return null;
@@ -288,7 +337,7 @@ class RouteBuilderService {
   }
 
   static StageData? _findNearestStageOnCorridor(String corridorId, double lat, double lng) {
-    final corridorStages = nairobiStages
+    final corridorStages = StageRegistry.all
         .where((s) => s.corridorId == corridorId && s.routeNumbers.isNotEmpty)
         .toList();
     if (corridorStages.isEmpty) return null;
@@ -312,7 +361,7 @@ class RouteBuilderService {
   static StageData? _findNearestStage(double lat, double lng) {
     StageData? nearest;
     double minDistance = double.infinity;
-    for (final stage in nairobiStages) {
+    for (final stage in StageRegistry.all) {
       if (stage.routeNumbers.isEmpty) continue;
       final distance = _haversineDistance(lat, lng, stage.lat, stage.lng);
       if (distance < minDistance) {
@@ -472,8 +521,8 @@ class RouteBuilderService {
 
   static StageData? _findTransferStage(CorridorData fromCorridor, CorridorData toCorridor) {
     // Find stages that serve both corridors or are very close
-    for (final fromStage in nairobiStages.where((s) => s.corridorId == fromCorridor.id)) {
-      for (final toStage in nairobiStages.where((s) => s.corridorId == toCorridor.id)) {
+    for (final fromStage in StageRegistry.all.where((s) => s.corridorId == fromCorridor.id)) {
+      for (final toStage in StageRegistry.all.where((s) => s.corridorId == toCorridor.id)) {
         final dist = _haversineDistance(
           fromStage.lat, fromStage.lng,
           toStage.lat, toStage.lng,
