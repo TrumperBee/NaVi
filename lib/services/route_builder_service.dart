@@ -148,6 +148,8 @@ class RouteBuilderService {
           matatuCoords,
           boardingCoord,
           alightingCoord,
+          fromStageId: boardingStage.id,
+          toStageId: alightingStage.id,
         ));
       }
     } else {
@@ -212,6 +214,8 @@ class RouteBuilderService {
         rideCoords,
         boardingCoord,
         alightingCoord,
+        fromStageId: boardingStage.id,
+        toStageId: alightingStage.id,
       ));
     }
 
@@ -265,6 +269,8 @@ class RouteBuilderService {
       matatuCoords,
       nearest.location,
       alightingCoord,
+      fromStageId: nearest.id,
+      toStageId: alightingStage.id,
     ));
 
     final walkToDest =
@@ -290,14 +296,18 @@ class RouteBuilderService {
     String routeNumber,
     List<LatLng> coordinates,
     LatLng from,
-    LatLng to,
-  ) {
+    LatLng to, {
+    String? fromStageId,
+    String? toStageId,
+  }) {
     final segment = RouteSegment.matatu(
       label: label,
       coordinates: coordinates,
       routeNumber: routeNumber,
       startPoint: from,
       endPoint: to,
+      fromStageId: fromStageId,
+      toStageId: toStageId,
     );
     return segment.copyWith(
         fareEstimate: FareCalculatorService.calculateFare(segment));
@@ -458,6 +468,8 @@ class RouteBuilderService {
           matatuCoords,
           boardingCoord,
           alightingStage.location,
+          fromStageId: boardingStage.id,
+          toStageId: alightingStage.id,
         ));
       }
       return segments;
@@ -475,6 +487,8 @@ class RouteBuilderService {
         matatuCoords1,
         boardingCoord,
         transferCoord,
+        fromStageId: boardingStage.id,
+        toStageId: transferStage.id,
       ));
     }
 
@@ -512,6 +526,8 @@ class RouteBuilderService {
           matatuCoords2,
           nextCorridorStage.location,
           alightingStage.location,
+          fromStageId: nextCorridorStage.id,
+          toStageId: alightingStage.id,
         ));
       }
     }

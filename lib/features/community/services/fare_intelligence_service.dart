@@ -1,12 +1,17 @@
 import 'package:flutter/foundation.dart';
 import 'package:navi_app/features/community/models/community_models.dart';
+import 'package:navi_app/models/fare_estimate_record.dart';
 import 'package:navi_app/services/database/database_service.dart';
 import 'package:navi_app/data/databases/stage_database.dart';
 import 'package:navi_app/models/stage_record.dart';
+import 'package:navi_app/services/fare_estimate_registry.dart';
 
 class FareIntelligenceService extends ChangeNotifier {
-  final DatabaseService _db = DatabaseService();
-  final StageDatabase _stageDb = StageDatabase();
+  // Lazy: construction of the service must not touch Firestore (the §1.6
+  // report/verify methods work purely against the in-memory registry and are
+  // unit-tested without a Firebase app).
+  late final DatabaseService _db = DatabaseService();
+  late final StageDatabase _stageDb = StageDatabase();
 
   List<FareIntelligence> _intelligenceData = [];
   bool _isLoading = false;
@@ -110,5 +115,55 @@ class FareIntelligenceService extends ChangeNotifier {
       }
     }
     return hourlyTotals.map((k, v) => MapEntry(k, v / hourlyCounts[k]!));
+  }
+
+  // ==================== §1.6 fare_estimates write path ====================
+  //
+  // The legacy `DatabaseService.submitFareReport(stageId, fare)` writes
+  // stage-level analytics (the averages above). Real-world fare *estimates*
+  // live in `FareEstimateRegistry` keyed on the (route, from, to) tuple the
+  // spec requires, so this service owns that write path: submissions land as
+  // UNVERIFIED, and only a reviewer's [verifyRouteFareEstimate] promotes a
+  // row to the verified confidence that the §1.6 resolution order honours.
+
+  /// Records a contributor-reported fare for one leg. Stored unverified: it
+  /// exists for review but does not affect displayed fares until it passes
+  /// the reviewer gate in [verifyRouteFareEstimate].
+  void submitRouteFareEstimate({
+    required String routeId,
+    required String fromStageId,
+    required String toStageId,
+    required int estimatedOffpeak,
+    required int estimatedPeak,
+    String? reportedBy,
+    DateTime? observedAt,
+  }) {
+    FareEstimateRegistry.upsert(FareEstimateRecord(
+      routeId: routeId,
+      fromStageId: fromStageId,
+      toStageId: toStageId,
+      estimatedOffpeak: estimatedOffpeak,
+      estimatedPeak: estimatedPeak,
+      confidence: FareConfidence.unverified,
+      lastVerified: observedAt ?? DateTime.now(),
+      reportedBy: reportedBy,
+    ));
+  }
+
+  /// Reviewer gate — spec §6: "Verified is system-set during review",
+  /// never contributor-editable. Promotes the stored row for this tuple so
+  /// the resolution order starts honouring it. No-op if nothing is stored.
+  void verifyRouteFareEstimate({
+    required String routeId,
+    required String fromStageId,
+    required String toStageId,
+    DateTime? verifiedAt,
+  }) {
+    FareEstimateRegistry.markVerified(
+      routeId: routeId,
+      fromStageId: fromStageId,
+      toStageId: toStageId,
+      verifiedAt: verifiedAt,
+    );
   }
 }

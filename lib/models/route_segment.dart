@@ -15,6 +15,13 @@ class RouteSegment {
   final Duration estimatedDuration;
   final FareEstimate? fareEstimate;
 
+  /// Boundaries of this leg as canonical stage ids (spec §1.2 convention).
+  /// Carried so the fare resolution order (§1.6) can look up a verified
+  /// contributor-reported fare for the exact (route, from, to) tuple. Null for
+  /// legs without a staged identity (pure walks).
+  final String? fromStageId;
+  final String? toStageId;
+
   const RouteSegment({
     required this.mode,
     required this.label,
@@ -25,6 +32,8 @@ class RouteSegment {
     required this.distanceMeters,
     required this.estimatedDuration,
     this.fareEstimate,
+    this.fromStageId,
+    this.toStageId,
   });
 
   RouteSegment copyWith({
@@ -37,6 +46,8 @@ class RouteSegment {
     double? distanceMeters,
     Duration? estimatedDuration,
     FareEstimate? fareEstimate,
+    String? fromStageId,
+    String? toStageId,
   }) {
     return RouteSegment(
       mode: mode ?? this.mode,
@@ -48,6 +59,8 @@ class RouteSegment {
       distanceMeters: distanceMeters ?? this.distanceMeters,
       estimatedDuration: estimatedDuration ?? this.estimatedDuration,
       fareEstimate: fareEstimate ?? this.fareEstimate,
+      fromStageId: fromStageId ?? this.fromStageId,
+      toStageId: toStageId ?? this.toStageId,
     );
   }
 
@@ -77,6 +90,8 @@ class RouteSegment {
     required String routeNumber,
     required LatLng startPoint,
     required LatLng endPoint,
+    String? fromStageId,
+    String? toStageId,
   }) {
     final distance = _calculateDistance(coordinates);
     const double kMatatuAvgSpeedKmh = 20.0;
@@ -91,6 +106,8 @@ class RouteSegment {
       distanceMeters: distance,
       estimatedDuration: Duration(seconds: (distance / speedMs).round()),
       fareEstimate: null,
+      fromStageId: fromStageId,
+      toStageId: toStageId,
     );
   }
 
