@@ -2,14 +2,18 @@ import 'dart:math';
 import 'package:latlong2/latlong.dart';
 import 'package:navi_app/data/nairobi_corridors_seed.dart';
 import 'package:navi_app/data/nairobi_stages_seed.dart';
+import 'package:navi_app/models/place_record.dart';
 import 'package:navi_app/models/search_result.dart';
 import 'package:navi_app/services/geocoding_service.dart';
+import 'package:navi_app/services/place_registry.dart';
 import 'package:navi_app/services/stage_registry.dart';
+import 'package:navi_app/utils/string_match.dart';
 
 const double kMaxCorridorSnapMeters = 400.0;
-const double kFuzzyMatchThreshold = 0.85;
-const int kLevenshteinTolerance = 2;
 
+/// Resolves a search query against the indexed local layers in the order the
+/// transport data spec §3 mandates: **places first, then stages**, then (in
+/// the view-model) community and Mapbox geocoding.
 class CorridorResolver {
   static final Map<int, CorridorData> _corridors = nairobiCorridors;
 
@@ -61,7 +65,7 @@ class CorridorResolver {
       if (name == lowerQuery) return stage;
       if (name.contains(lowerQuery) || lowerQuery.contains(name)) return stage;
 
-      if (_levenshteinDistance(name, lowerQuery) <= kLevenshteinTolerance) {
+      if (levenshteinDistance(name, lowerQuery) <= kLevenshteinTolerance) {
         return stage;
       }
 
@@ -81,7 +85,130 @@ class CorridorResolver {
     ).toList();
   }
 
+  // ==================== PLACES (spec §3 first layer) ====================
+
+  /// Single best place hit for [query], or null. Mirrors stage matching:
+  /// case-insensitive, containment in either direction, then fuzzy.
+  /// Ambiguous queries are handled by [findPlacesByName], which returns every
+  /// match so the UI can present both the place and the stage.
+  static PlaceRecord? findExactPlaceMatch(String query) {
+    return PlaceRegistry.findByName(query);
+  }
+
+  /// Every place matching [query], best match first.
+  static List<PlaceRecord> findPlacesByName(String query) {
+    return PlaceRegistry.findMatching(query);
+  }
+
+  /// Resolves a known [place] into a routable [SearchResult]: corridor snap
+  /// then nearest stage on that corridor, exactly the same fallback a Mapbox
+  /// POI without a stage name goes through — a place the rider doesn't know
+  /// by its bus stop gets boarding context from the nearest stop on the
+  /// nearest corridor. No transit nearby yields [SearchResult.noTransitData].
+  static SearchResult resolvePlace(PlaceRecord place, {required String query}) {
+    final corridor = findNearestCorridor(place.latitude, place.longitude);
+    if (corridor == null) {
+      return _noTransitPlace(place, query);
+    }
+
+    final stage = findNearestStageOnCorridor(
+      corridor.id,
+      place.latitude,
+      place.longitude,
+    );
+    if (stage == null) {
+      return _noTransitPlace(place, query);
+    }
+
+    final distance = _haversineDistance(
+      place.latitude,
+      place.longitude,
+      stage.lat,
+      stage.lng,
+    );
+
+    return SearchResult(
+      query: query,
+      lat: place.latitude,
+      lng: place.longitude,
+      resolvedLabel: place.name,
+      secondaryLine: null,
+      matchedCorridorName: corridor.name,
+      nearestStageName: stage.name,
+      nearestStageLat: stage.lat,
+      nearestStageLng: stage.lng,
+      routeNumbers: stage.routeNumbers,
+      distanceToStageMeters: distance,
+      source: SearchResultSource.localPlace,
+    );
+  }
+
+  /// A place result that came from the local layer but has no transit nearby
+  /// still identifies as a local place (not a Mapbox geocode) so consumers can
+  /// tell the layers apart.
+  static SearchResult _noTransitPlace(PlaceRecord place, String query) {
+    return SearchResult(
+      query: query,
+      lat: place.latitude,
+      lng: place.longitude,
+      resolvedLabel: place.name,
+      secondaryLine: null,
+      matchedCorridorName: null,
+      nearestStageName: 'No transit data nearby',
+      nearestStageLat: place.latitude,
+      nearestStageLng: place.longitude,
+      routeNumbers: const [],
+      distanceToStageMeters: double.infinity,
+      source: SearchResultSource.localPlace,
+    );
+  }
+
   static SearchResult resolve(String query, GeocodingResult geocodingResult) {
+    // §3 order: the indexed place layer outranks everything — an area or
+    // landmark we curate beats a geocoded guess at the same name. A place
+    // without corridor linkage is still just that place, so in that case the
+    // coordinate path gets a chance to produce a routable entry instead of
+    // reporting dead-end "no transit" while Mapbox had transit.
+    final exactPlace = findExactPlaceMatch(query);
+    if (exactPlace != null &&
+        _geocodedNameMatchesPlace(geocodingResult, exactPlace)) {
+      final placeResult = resolvePlace(exactPlace, query: query);
+      if (placeResult.matchedCorridorName != null) {
+        return placeResult;
+      }
+    }
+
+    return _resolveCoordinate(query, geocodingResult);
+  }
+
+  /// Only claim a geocode when it really is the indexed place: "KICC, Nairobi
+  /// CBD" belongs to a KICC place, but a "Yaya Centre" hit from a "KICC" query
+  /// must resolve on its own merits rather than being relabelled KICC.
+  static bool _geocodedNameMatchesPlace(
+    GeocodingResult geocodingResult,
+    PlaceRecord place,
+  ) {
+    final geoName = geocodingResult.placeName.toLowerCase();
+    final candidates = <String>[
+      place.placeId,
+      place.name,
+      ...place.aliases,
+    ];
+    for (final candidate in candidates) {
+      final target = candidate.toLowerCase().trim();
+      if (target.isEmpty) continue;
+      if (geoName == target ||
+          (target.length >= 3 && geoName.contains(target)) ||
+          (geoName.length >= 3 && target.contains(geoName))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Corridor-snap + nearest-stage resolution of an arbitrary coordinate
+  /// (exact stage name short-circuits moved to [resolve]).
+  static SearchResult _resolveCoordinate(String query, GeocodingResult geocodingResult) {
     final exactStage = findExactStageMatch(query);
     if (exactStage != null) {
       return SearchResult.exactStage(
@@ -216,29 +343,5 @@ class CorridorResolver {
         cos(lat1 * pi / 180) * cos(lat2 * pi / 180) *
         sin(dLng / 2) * sin(dLng / 2);
     return 2 * atan2(sqrt(a), sqrt(1 - a)) * R;
-  }
-
-  static int _levenshteinDistance(String s1, String s2) {
-    if (s1 == s2) return 0;
-    if (s1.isEmpty) return s2.length;
-    if (s2.isEmpty) return s1.length;
-
-    final len1 = s1.length;
-    final len2 = s2.length;
-    final dp = List.generate(len1 + 1, (_) => List<int>.filled(len2 + 1, 0));
-
-    for (int i = 0; i <= len1; i++) dp[i][0] = i;
-    for (int j = 0; j <= len2; j++) dp[0][j] = j;
-
-    for (int i = 1; i <= len1; i++) {
-      for (int j = 1; j <= len2; j++) {
-        final cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
-        dp[i][j] = min(
-          dp[i - 1][j] + 1,
-          min(dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost),
-        );
-      }
-    }
-    return dp[len1][len2];
   }
 }

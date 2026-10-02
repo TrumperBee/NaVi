@@ -7,11 +7,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:navi_app/data/nairobi_corridors_seed.dart';
 import 'package:navi_app/data/nairobi_stages_seed.dart';
+import 'package:navi_app/models/place_record.dart';
 import 'package:navi_app/models/route_record.dart';
 import 'package:navi_app/models/stage_record.dart';
 import 'package:navi_app/models/transport_models.dart';
 import 'package:navi_app/services/database/cache_manager.dart';
+import 'package:navi_app/services/place_registry.dart';
 import 'package:navi_app/services/stage_registry.dart';
+import 'package:navi_app/utils/geo_utils.dart';
 
 /// One-time import of the bundled GTFS stop/route data into the app's existing
 /// local persistence layer (the Hive boxes behind [CacheManager] that
@@ -146,6 +149,14 @@ class GtfsImportService {
         '${result.routes.length} route records from '
         '${result.routeSourceCount} routes');
     print('[GTFS] corridor assignment: $summary');
+    if (result.placeLinks.isNotEmpty) {
+      final links = result.placeLinks.entries
+          .map((e) => '${e.key}->${e.value}')
+          .join(', ');
+      print('[GTFS] stage-place links (${result.placeLinks.length}): $links');
+    } else {
+      print('[GTFS] stage-place links: none (no unambiguous matches)');
+    }
 
     await prefs.setBool(importFlagKey, true);
     return true;
@@ -172,6 +183,10 @@ class GtfsImportService {
       stages.add(stage);
       idToName[stageId] = stage.stageName;
     }
+
+    // Link stages to curated places (§1.2) where the match is unambiguous —
+    // near-identical name AND close proximity. Most stops stay unlinked.
+    final linkResult = linkStagesToPlaces(stages);
 
     final rawRoutes = jsonDecode(routesJson) as List;
     final routes = <RouteRecord>[];
@@ -222,14 +237,19 @@ class GtfsImportService {
       breakdown[route.corridor] = (breakdown[route.corridor] ?? 0) + 1;
     }
 
+    final placeLinks = <String, String>{
+      for (final link in linkResult.links) link.placeId: link.stageId,
+    };
+
     return GtfsImportResult(
-      stages: List.unmodifiable(stages),
+      stages: List.unmodifiable(linkResult.stages),
       routes: List.unmodifiable(routes),
-      stageData: _buildStageData(stages, routeCorridorByNumber),
+      stageData: _buildStageData(linkResult.stages, routeCorridorByNumber),
       duplicateStages: duplicateStages,
       routeSourceCount: rawRoutes.length,
       corridorBreakdown: Map.unmodifiable(breakdown),
       unresolvedStageRefs: List.unmodifiable(unresolvedStageRefs),
+      placeLinks: Map.unmodifiable(placeLinks),
     );
   }
 
@@ -260,6 +280,7 @@ class GtfsImportService {
       corridor: s.roadName,
       routes: s.routesServed,
       area: s.area.isEmpty ? null : s.area,
+      placeId: s.placeId,
     );
   }
 
@@ -314,8 +335,140 @@ class GtfsImportService {
         corridorId: corridorId,
         routeNumbers: s.routesServed,
         area: s.area.isEmpty ? null : s.area,
+        placeId: s.placeId,
       );
     }).toList();
+  }
+
+  // ==================== PLACE LINKING (spec §1.2) ====================
+
+  /// Stop that sits within this distance of a place AND shares its name is a
+  /// plausible link; anything further is coincidence (both Nairobi stadiums,
+  /// two "malls", ... ).
+  static const double _maxPlaceLinkMeters = 1500.0;
+
+  /// Links GTFS stages to curated places where the match is unambiguous:
+  /// a place must name AND sit near exactly one stage, and that stage must not
+  /// be claimed by any other place. Anything ambiguous — two "Roysambu" stops
+  /// 300m apart, a "Two Rivers" cluster with two candidate stops — stays
+  /// unlinked (`placeId: null`) rather than guessing. Pure/stateless so the
+  /// bundle link count is verifiable off-device.
+  static PlaceLinkResult linkStagesToPlaces(
+    List<StageRecord> stages, {
+    double maxProximityMeters = _maxPlaceLinkMeters,
+  }) {
+    final stageToPlace = <String, String>{};
+
+    for (final place in PlaceRegistry.all) {
+      final names = {
+        place.name.toLowerCase(),
+        ...place.aliases.map((a) => a.toLowerCase()),
+      };
+      final candidates = <String>[
+        for (final stage in stages)
+          if (_stageMatchesPlace(stage, names, place, maxProximityMeters))
+            stage.stageId,
+      ];
+      if (candidates.length == 1) {
+        stageToPlace[candidates.single] = place.placeId;
+      }
+    }
+
+    // A single stop matching two different places is an ambiguous claim;
+    // drop both rather than pick one arbitrarily.
+    final claimCount = <String, int>{};
+    for (final stageId in stageToPlace.keys) {
+      claimCount[stageId] = (claimCount[stageId] ?? 0) + 1;
+    }
+    final conflicted = <String>{
+      for (final entry in claimCount.entries)
+        if (entry.value > 1) entry.key,
+    };
+    for (final stageId in conflicted) {
+      stageToPlace.remove(stageId);
+    }
+
+    final linkedStages = stages.map((s) {
+      final placeId = stageToPlace[s.stageId];
+      if (placeId == null) return s;
+      return s.copyWith(placeId: placeId);
+    }).toList();
+
+    final links = stageToPlace.entries
+        .map((e) => PlaceLink(placeId: e.value, stageId: e.key))
+        .toList()
+      ..sort((a, b) => a.placeId.compareTo(b.placeId));
+
+    return PlaceLinkResult(
+      stages: List.unmodifiable(linkedStages),
+      links: List.unmodifiable(links),
+    );
+  }
+
+  static bool _stageMatchesPlace(
+    StageRecord stage,
+    Set<String> placeNames,
+    PlaceRecord place,
+    double maxProximityMeters,
+  ) {
+    final stageName = stage.stageName.toLowerCase().trim();
+    final area = stage.area.toLowerCase().trim();
+
+    // STRONG name relation only: the stop must literally be (or be named
+    // after) the place. Whole-name equality or a whole-token inclusion beats
+    // fuzzy guessing — a stop whose name merely *resembles* a place ("Siaya"
+    // vs "Yaya") must not link.
+    var nameMatch = false;
+    for (final name in placeNames) {
+      if (name.isEmpty || name.length < 3) continue;
+      if (stageName == name) {
+        nameMatch = true;
+        break;
+      }
+      if (_containsNameToken(_tokenize(stageName), name)) {
+        nameMatch = true;
+        break;
+      }
+      if (name.length >= 4 &&
+          area.isNotEmpty &&
+          (area == name || area.contains(name) || name.contains(area))) {
+        nameMatch = true;
+        break;
+      }
+    }
+    if (!nameMatch) return false;
+
+    final distance = haversineDistance(
+      place.latitude,
+      place.longitude,
+      stage.latitude,
+      stage.longitude,
+    );
+    return distance <= maxProximityMeters;
+  }
+
+  /// Splits a name into lowercase alphanumeric runs ("Safari Park/USIU" ->
+  /// ["safari", "park", "usiu"]).
+  static List<String> _tokenize(String name) {
+    return name
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((t) => t.length >= 3)
+        .toList();
+  }
+
+  /// True when [name] is a single token or an exact sequence of [tokens]
+  /// ("university of nairobi" matches ["university", "of", "nairobi"];
+  /// "yaya" does not match ["siaya"]).
+  static bool _containsNameToken(List<String> tokens, String name) {
+    if (tokens.isEmpty) return false;
+    final parts = name.split(' ');
+    if (parts.length == 1) {
+      return tokens.contains(name);
+    }
+    for (int i = 0; i + parts.length <= tokens.length; i++) {
+      if (tokens.sublist(i, i + parts.length).join(' ') == name) return true;
+    }
+    return false;
   }
 
   static String _assignCorridorId(
@@ -438,6 +591,7 @@ class GtfsImportResult {
     required this.routeSourceCount,
     required this.corridorBreakdown,
     required this.unresolvedStageRefs,
+    required this.placeLinks,
   });
 
   /// Unique parsed stages (duplicate ids already dropped).
@@ -462,4 +616,33 @@ class GtfsImportResult {
 
   /// route-count per corridor id across all direction records.
   final Map<String, int> corridorBreakdown;
+
+  /// Ambiguous-link-free stage→place links (spec §1.2): map of
+  /// place_id → stage_id for every seeded place that matched exactly one
+  /// nearby, similarly-named stop. Most bundled stops remain unlinked.
+  final Map<String, String> placeLinks;
+}
+
+/// One unambiguous stage↔place link produced by
+/// [GtfsImportService.linkStagesToPlaces].
+class PlaceLink {
+  const PlaceLink({required this.placeId, required this.stageId});
+
+  final String placeId;
+  final String stageId;
+}
+
+/// Stages with [PlaceLink]s applied plus the links themselves.
+class PlaceLinkResult {
+  const PlaceLinkResult({
+    required this.stages,
+    required this.links,
+  });
+
+  /// Same universe as the input, but every unambiguously matched stop now
+  /// carries `placeId`.
+  final List<StageRecord> stages;
+
+  /// The unambiguous links (sorted by place id for stable reporting).
+  final List<PlaceLink> links;
 }

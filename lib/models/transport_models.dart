@@ -29,6 +29,11 @@ class StageModel extends Node {
   int? totalReports;
   Map<String, dynamic>? fareHistory;
 
+  /// Optional link to a named place (spec §1.2), kept on the cached shape so
+  /// the one-time GTFS import's place links survive a relaunch. Additive:
+  /// cached rows written before this field existed decode to null.
+  String? placeId;
+
   StageModel({
     required super.id,
     required super.name,
@@ -41,6 +46,7 @@ class StageModel extends Node {
     this.averageFare,
     this.totalReports,
     this.fareHistory,
+    this.placeId,
   }) : super(type: 'stage');
 
   // Convert to Map for Firestore
@@ -57,6 +63,7 @@ class StageModel extends Node {
       'average_fare': averageFare,
       'total_reports': totalReports,
       'fare_history': fareHistory,
+      'place_id': placeId,
     };
   }
 
@@ -73,6 +80,7 @@ class StageModel extends Node {
       averageFare: (map['average_fare'] as num?)?.toDouble(),
       totalReports: map['total_reports'],
       fareHistory: map['fare_history'] as Map<String, dynamic>?,
+      placeId: map['place_id'] as String?,
     );
   }
 }

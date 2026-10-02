@@ -55,31 +55,57 @@ class SearchViewModel extends ChangeNotifier {
     _scheduleGeocodeSearch(trimmed);
   }
 
-  void _runLocalSearch(String query) {
-    final exactStage = CorridorResolver.findExactStageMatch(query);
-    if (exactStage != null) {
-      final result = SearchResult.exactStage(
-        query: query,
-        stageName: exactStage.name,
-        lat: exactStage.lat,
-        lng: exactStage.lng,
-        routeNumbers: exactStage.routeNumbers,
-      );
-      _updateResults([result], 'Local exact match');
-    } else {
-      final localStages = CorridorResolver.findStagesByName(query);
-      if (localStages.isNotEmpty) {
-        final results = localStages.map((s) => SearchResult.exactStage(
-          query: query,
-          stageName: s.name,
-          lat: s.lat,
-          lng: s.lng,
-          routeNumbers: s.routeNumbers,
-        )).toList();
-        _updateResults(results, 'Local stage matches');
-      }
-    }
+  /// Local matches come first (places, then stages carrying routes), followed by
+/// geocoded results that aren't already represented by the same coordinate.
+/// A place and its stage are intentionally both kept: "Roysambu" yields the
+/// area place and the "Roysambu Stage" stop as distinct options (§3).
+void _runLocalSearch(String query) {
+  final local = <SearchResult>[];
+
+  for (final place in CorridorResolver.findPlacesByName(query)) {
+    local.add(CorridorResolver.resolvePlace(place, query: query));
   }
+
+  final exactStage = CorridorResolver.findExactStageMatch(query);
+  if (exactStage != null) {
+    local.add(SearchResult.exactStage(
+      query: query,
+      stageName: exactStage.name,
+      lat: exactStage.lat,
+      lng: exactStage.lng,
+      routeNumbers: exactStage.routeNumbers,
+    ));
+  } else {
+    final localStages = CorridorResolver.findStagesByName(query);
+    local.addAll(localStages.map((s) => SearchResult.exactStage(
+      query: query,
+      stageName: s.name,
+      lat: s.lat,
+      lng: s.lng,
+      routeNumbers: s.routeNumbers,
+    )));
+  }
+
+  // A place can resolve to the very stop its name matches ("Commercial"
+  // -> "Commercial Terminus"); collapse the exact duplicate, keeping the
+  // higher-priority place first.
+  final seen = <String>{};
+  final distinct = <SearchResult>[];
+  for (final r in local) {
+    final key = '${r.resolvedLabel}|${r.lat.toStringAsFixed(5)},'
+        '${r.lng.toStringAsFixed(5)}';
+    if (seen.add(key)) distinct.add(r);
+  }
+
+  if (distinct.isNotEmpty) {
+    _updateResults(distinct, _localSourceLabel(distinct));
+  }
+}
+
+String _localSourceLabel(List<SearchResult> local) {
+  final hasPlace = local.any((r) => r.source == SearchResultSource.localPlace);
+  return hasPlace ? 'Local places + stage matches' : 'Local stage matches';
+}
 
   void _scheduleGeocodeSearch(String query) {
     _debounceTimer?.cancel();
@@ -111,8 +137,10 @@ class SearchViewModel extends ChangeNotifier {
         // Genuinely no matches: the ROLE demands an explanatory message rather
         // than a silent blank list. Only surface it when local stages are also
         // missing for this query.
-        if (_results.isNotEmpty && _results.first.source == SearchResultSource.exactStage) {
-          _searchSource = 'Local stage matches only';
+        if (_results.isNotEmpty &&
+            (_results.first.source == SearchResultSource.exactStage ||
+                _results.first.source == SearchResultSource.localPlace)) {
+          _searchSource = 'Local places + stage matches only';
         } else {
           _error = 'No results found for "$query"';
           _searchSource = 'No results found';
@@ -157,7 +185,8 @@ class SearchViewModel extends ChangeNotifier {
   /// places that aren't already represented by the same coordinate.
   List<SearchResult> _mergeLocal(List<SearchResult> geocoded, String query) {
     final local = _results
-        .where((r) => r.source == SearchResultSource.exactStage)
+        .where((r) => r.source == SearchResultSource.exactStage ||
+            r.source == SearchResultSource.localPlace)
         .toList();
     final seen = <String>{for (final r in local) r.nearestStageName};
     final merged = <SearchResult>[...local];

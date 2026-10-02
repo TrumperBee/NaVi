@@ -10,6 +10,12 @@ class StageRecord {
   final double popularityScore;
   final DateTime lastUpdated;
 
+  /// Optional link to a named place (spec §1.2) this stage belongs to, e.g.
+  /// the "Roysambu" place id on the "Roysambu Stage" stop. Null for stops with
+  /// no unambiguous place. Additive and nullable on purpose: older cached
+  /// stage rows simply read back a null.
+  final String? placeId;
+
   StageRecord({
     required this.stageId,
     required this.stageName,
@@ -20,6 +26,7 @@ class StageRecord {
     required this.county,
     required this.routesServed,
     this.popularityScore = 0.0,
+    this.placeId,
     DateTime? lastUpdated,
   }) : lastUpdated = lastUpdated ?? DateTime.now();
 
@@ -34,6 +41,7 @@ class StageRecord {
       'county': county,
       'routes_served': routesServed,
       'popularity_score': popularityScore,
+      'place_id': placeId,
       'last_updated': lastUpdated.toIso8601String(),
     };
   }
@@ -49,6 +57,7 @@ class StageRecord {
       county: map['county'] ?? 'Nairobi',
       routesServed: List<String>.from(map['routes_served'] ?? map['routes'] ?? []),
       popularityScore: (map['popularity_score'] as num?)?.toDouble() ?? 0.0,
+      placeId: map['place_id'] as String?,
       lastUpdated: map['last_updated'] != null
           ? DateTime.parse(map['last_updated'])
           : DateTime.now(),
@@ -66,6 +75,7 @@ class StageRecord {
       county: map['county'] ?? 'Nairobi',
       routesServed: List<String>.from(map['routes'] ?? map['routes_served'] ?? []),
       popularityScore: (map['popularity_score'] as num?)?.toDouble() ?? 0.0,
+      placeId: map['place_id'] as String?,
       lastUpdated: map['last_updated'] != null
           ? (map['last_updated'] as dynamic).toDate()
           : DateTime.now(),
@@ -81,6 +91,7 @@ class StageRecord {
     String? county,
     List<String>? routesServed,
     double? popularityScore,
+    String? placeId,
     DateTime? lastUpdated,
   }) {
     return StageRecord(
@@ -93,6 +104,7 @@ class StageRecord {
       county: county ?? this.county,
       routesServed: routesServed ?? this.routesServed,
       popularityScore: popularityScore ?? this.popularityScore,
+      placeId: placeId ?? this.placeId,
       lastUpdated: lastUpdated ?? this.lastUpdated,
     );
   }

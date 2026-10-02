@@ -11,6 +11,10 @@ class StageData {
   final List<String>? saccos;
   final double? averageFare;
 
+  /// Optional link to a named place (spec §1.2). Most seed/imported stops
+  /// have no place; only unambiguous near-name + proximity matches get one.
+  final String? placeId;
+
   const StageData({
     required this.id,
     required this.name,
@@ -21,6 +25,7 @@ class StageData {
     this.area,
     this.saccos,
     this.averageFare,
+    this.placeId,
   });
 
   LatLng get location => LatLng(lat, lng);

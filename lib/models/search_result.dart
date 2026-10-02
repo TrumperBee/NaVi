@@ -101,4 +101,4 @@ class SearchResult {
   }
 }
 
-enum SearchResultSource { exactStage, mapboxGeocode }
+enum SearchResultSource { exactStage, mapboxGeocode, localPlace }
