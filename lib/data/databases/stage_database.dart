@@ -10,7 +10,7 @@ class StageDatabase {
   factory StageDatabase() => _instance;
   StageDatabase._internal();
 
-  final DatabaseService _db = DatabaseService();
+  DatabaseService? _db;
   final CacheManager _cache = CacheManager();
 
   List<StageRecord> _localIndex = [];
@@ -159,7 +159,7 @@ class StageDatabase {
 
   Future<void> updatePopularity(String stageId, {double increment = 0.1}) async {
     try {
-      await _db.getStageById(stageId);
+      await (_db ??= DatabaseService()).getStageById(stageId);
     } catch (_) {}
   }
 

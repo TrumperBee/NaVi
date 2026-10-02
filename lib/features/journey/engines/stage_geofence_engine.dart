@@ -20,6 +20,7 @@ class GeofenceResult {
 class StageGeofenceEngine extends ChangeNotifier {
   final StageDatabase _stageDb = StageDatabase();
   final Set<String> _activeStages = {};
+  final Map<String, String> _activeStageNames = {};
   bool _isChecking = false;
 
   double _approachRadius = 200;
@@ -61,6 +62,7 @@ class StageGeofenceEngine extends ChangeNotifier {
         if (distance <= _entryRadius) {
           if (!_activeStages.contains(stage.stageId)) {
             _activeStages.add(stage.stageId);
+            _activeStageNames[stage.stageId] = stage.stageName;
             events.add(GeofenceResult(
               stage: stage,
               event: GeofenceEvent.entered,
@@ -79,6 +81,7 @@ class StageGeofenceEngine extends ChangeNotifier {
       for (final stageId in _activeStages.toList()) {
         if (!nearbyIds.contains(stageId)) {
           _activeStages.remove(stageId);
+          _activeStageNames.remove(stageId);
         }
       }
 
@@ -98,16 +101,15 @@ class StageGeofenceEngine extends ChangeNotifier {
 
   bool isAtStage(String stageId) => _activeStages.contains(stageId);
 
-  bool isAtStageName(String stageName) {
-    return false;
-  }
+  bool isAtStageName(String stageName) =>
+      _activeStageNames.containsValue(stageName);
 
-  String? getCurrentStageName() {
-    return null;
-  }
+  String? getCurrentStageName() =>
+      _activeStageNames.isEmpty ? null : _activeStageNames.values.first;
 
   void clearState() {
     _activeStages.clear();
+    _activeStageNames.clear();
     _recentEvents.clear();
   }
 

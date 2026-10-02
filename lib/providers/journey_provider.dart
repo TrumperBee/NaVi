@@ -6,13 +6,9 @@ import 'package:navi_app/features/journey/services/matatu_assistant.dart';
 import 'package:navi_app/features/journey/services/journey_notifications.dart';
 import 'package:navi_app/features/journey/engines/journey_auto_detector.dart';
 import 'package:navi_app/features/journey/engines/route_deviation_engine.dart';
-import 'package:navi_app/services/intelligence/prediction_engine.dart';
-import 'package:navi_app/services/reporting/report_service.dart';
 import 'package:navi_app/services/database/local_storage_service.dart';
 
 class JourneyProvider extends ChangeNotifier {
-  final PredictionEngine _predictor = PredictionEngine();
-  final ReportService _reportService = ReportService();
   final MatatuAssistant _assistant = MatatuAssistant();
   final JourneyNotificationService _notifications = JourneyNotificationService();
   final LocalStorageService _storage = LocalStorageService();
@@ -431,21 +427,42 @@ class JourneyProvider extends ChangeNotifier {
     if (_destinationPoint == null) return;
 
     _autoDetector.onBoardingDetected = _autoDetectBoarding;
+    _autoDetector.onStageArrived = _autoDetectStageArrived;
     _autoDetector.onStopReached = _autoDetectStopReached;
     _autoDetector.onApproachingDestination = _autoDetectApproaching;
     _autoDetector.onAlighted = _autoDetectAlighted;
     _autoDetector.onDeviation = _autoDetectDeviation;
 
+    final coords = resolveAutoDetectionCoordinates();
     await _autoDetector.startDetection(
-      destinationLat: _destinationPoint!.latitude,
-      destinationLng: _destinationPoint!.longitude,
-      startLat: _fromStageName.isNotEmpty ? -1.2833 : -1.2833,
-      startLng: _fromStageName.isNotEmpty ? 36.8167 : 36.8167,
+      destinationLat: coords.destLat,
+      destinationLng: coords.destLng,
+      startLat: coords.startLat,
+      startLng: coords.startLng,
       routeStopNames: _timelineItems
           .where((t) => t.id.startsWith('stop_'))
           .map((t) => t.label.replaceAll('Pass ', '').replaceAll('Alight at ', ''))
           .toList(),
+      routeNumber: _routeNumber,
     );
+  }
+
+  @visibleForTesting
+  ({double startLat, double startLng, double destLat, double destLng})
+      resolveAutoDetectionCoordinates() {
+    return (
+      startLat: _fromStageLocation?.latitude ?? -1.2833,
+      startLng: _fromStageLocation?.longitude ?? 36.8167,
+      destLat: _toStageLocation?.latitude ?? _destinationPoint?.latitude ?? -1.2833,
+      destLng: _toStageLocation?.longitude ?? _destinationPoint?.longitude ?? 36.8167,
+    );
+  }
+
+  void _autoDetectStageArrived() {
+    if (!_autoAdvance) return;
+    advancePhase(JourneyPhase.waitingForMatatu);
+    _lastAssistantMessage = 'At $_fromStageName. Board Route $_routeNumber.';
+    notifyListeners();
   }
 
   void _autoDetectBoarding() {

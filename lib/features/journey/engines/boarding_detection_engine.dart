@@ -36,6 +36,8 @@ class BoardingDetectionEngine extends ChangeNotifier {
   int _vehicleCount = 0;
   int _walkCount = 0;
   bool _hasBoarded = false;
+  int _rideTicks = 0;
+  int _alightWalkTicks = 0;
 
   MovementState get currentState => _currentState;
   MovementState get previousState => _previousState;
@@ -95,9 +97,11 @@ class BoardingDetectionEngine extends ChangeNotifier {
   bool _detectBoarding() {
     if (_hasBoarded) return false;
 
-    if (_previousState == MovementState.walking &&
-        _currentState == MovementState.inVehicle &&
-        _vehicleCount >= 3) {
+    _rideTicks = _currentState == MovementState.inVehicle
+        ? _rideTicks + 1
+        : 0;
+
+    if (_rideTicks >= 3) {
       _hasBoarded = true;
       return true;
     }
@@ -107,9 +111,11 @@ class BoardingDetectionEngine extends ChangeNotifier {
   bool _detectAlighting() {
     if (!_hasBoarded) return false;
 
-    if (_previousState == MovementState.inVehicle &&
-        _currentState == MovementState.walking &&
-        _walkCount >= 2) {
+    _alightWalkTicks = _currentState == MovementState.walking
+        ? _alightWalkTicks + 1
+        : 0;
+
+    if (_alightWalkTicks >= 2) {
       _hasBoarded = false;
       return true;
     }
@@ -136,6 +142,8 @@ class BoardingDetectionEngine extends ChangeNotifier {
     _vehicleCount = 0;
     _walkCount = 0;
     _hasBoarded = false;
+    _rideTicks = 0;
+    _alightWalkTicks = 0;
     notifyListeners();
   }
 }

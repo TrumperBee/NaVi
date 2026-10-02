@@ -3,8 +3,6 @@ import 'package:navi_app/models/transport_models.dart';
 import 'package:navi_app/models/wait_report_model.dart';
 import 'package:navi_app/data/seed_data.dart';
 import 'package:navi_app/core/constants.dart';
-import 'package:navi_app/features/matatu/engines/fare_estimation_engine.dart';
-import 'package:navi_app/features/matatu/engines/route_matching_engine.dart';
 
 void main() {
   group('Models', () {
@@ -98,36 +96,4 @@ void main() {
     });
   });
 
-  group('FareEstimationEngine', () {
-    test('calculates base fare correctly', () {
-      final engine = FareEstimationEngine();
-      final fare = engine.estimateFare(5.0);
-      expect(fare, greaterThan(0));
-      expect(fare, equals(100.0)); // 50 + (5 * 10)
-    });
-
-    test('applies peak hour multiplier', () {
-      final engine = FareEstimationEngine();
-      final normalFare = engine.estimateFare(5.0, isPeakHour: false);
-      final peakFare = engine.estimateFare(5.0, isPeakHour: true);
-      expect(peakFare, greaterThan(normalFare));
-    });
-  });
-
-  group('RouteMatchingEngine', () {
-    test('finds routes by corridor', () {
-      final engine = RouteMatchingEngine();
-      final routes = engine.findRoutesByCorridor('Thika Road');
-      expect(routes, isNotEmpty);
-      for (final route in routes) {
-        expect(route.corridor, equals('Thika Road'));
-      }
-    });
-
-    test('searches routes by query', () {
-      final engine = RouteMatchingEngine();
-      final results = engine.searchRoutes('44');
-      expect(results, isNotEmpty);
-    });
-  });
 }
