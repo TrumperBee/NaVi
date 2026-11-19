@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' show MapboxOptions;
 import 'package:navi_app/services/mapbox_config.dart';
 
 class GeocodingResult {
@@ -88,6 +89,24 @@ class GeocodingService {
   })  : _accessToken = accessToken ?? MapboxConfig.accessToken,
         _client = client ?? http.Client();
 
+  String? _fallbackToken;
+
+  /// The token to hit the API with. [MapboxConfig.accessToken] already
+  /// resolves the `--dart-define` value, then the local
+  /// `lib/config/mapbox_secrets.dart` fallback, so this normally never runs
+  /// empty. As a last resort it reads the native manifest token that Gradle
+  /// filled in, instead of firing requests with an empty token.
+  Future<String> _token() async {
+    if (_accessToken.isNotEmpty) return _accessToken;
+    if (_fallbackToken != null) return _fallbackToken!;
+    try {
+      _fallbackToken = await MapboxOptions.getAccessToken();
+    } catch (_) {
+      _fallbackToken = '';
+    }
+    return _fallbackToken!;
+  }
+
   Future<GeocodingResult> geocode(String query) async {
     final results = await geocodeMultiple(query, limit: 1);
     if (results.isEmpty) {
@@ -102,11 +121,12 @@ class GeocodingService {
     if (query.trim().isEmpty) return [];
 
     final encodedQuery = Uri.encodeComponent(query.trim());
+    final token = await _token();
     final url = Uri.parse(
       '$_baseUrl/$encodedQuery.json'
       '?proximity=$_nairobiProximity'
       '&limit=$limit'
-      '&access_token=$_accessToken'
+      '&access_token=$token'
       '&autocomplete=true'
       '&language=en'
       '&types=place,address,poi,neighborhood',
@@ -125,9 +145,10 @@ class GeocodingService {
       {int limit = 1}) async {
     final lng = coordinate.longitude.toStringAsFixed(6);
     final lat = coordinate.latitude.toStringAsFixed(6);
+    final token = await _token();
     final url = Uri.parse(
       '$_baseUrl/$lng,$lat.json'
-      '?access_token=$_accessToken'
+      '?access_token=$token'
       '&language=en'
       '&limit=$limit'
       '&types=place,address,poi,neighborhood',

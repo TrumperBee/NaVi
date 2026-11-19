@@ -1,3 +1,7 @@
+import java.util.Base64
+import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -16,10 +20,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
-
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.android.application"
@@ -30,12 +30,36 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Mapbox token is injected rather than committed: project
-        // android/gradle.properties (empty by default) or the developer's
-        // ~/.gradle/gradle.properties / MAPBOX_TOKEN env var supply the value.
-        val mapboxToken = providers.gradleProperty("MAPBOX_TOKEN").orNull
-            ?: System.getenv("MAPBOX_TOKEN").orEmpty()
-        manifestPlaceholders["MAPBOX_TOKEN"] = mapboxToken
+        // Mapbox public token — injected at build time, never committed.
+        // Resolution order (see docs/BUILD_SETUP.md):
+        //  1. --dart-define=MAPBOX_TOKEN=...  (Flutter forwards it to Gradle
+        //     as base64-encoded KEY=VALUE entries in the `dart-defines`
+        //     project property),
+        //  2. android/key.properties  (local-only, gitignored),
+        //  3. MAPBOX_TOKEN environment variable or gradle property (CI).
+        val dartDefines: List<String> =
+            (project.findProperty("dart-defines") as String? ?: "")
+                .split(',')
+                .filter { it.isNotEmpty() }
+        val defineMap: Map<String, String> = dartDefines.mapNotNull { enc ->
+            runCatching {
+                val pair =
+                    String(Base64.getDecoder().decode(enc), Charsets.UTF_8)
+                val idx = pair.indexOf('=')
+                if (idx <= 0) null else pair.substring(0, idx) to pair.substring(idx + 1)
+            }.getOrNull()
+        }.toMap()
+
+        val localSecrets = Properties().apply {
+            val f = rootProject.file("key.properties")
+            if (f.exists()) f.inputStream().use { stream -> load(stream) }
+        }
+
+        val mapboxToken: String? = defineMap["MAPBOX_TOKEN"]
+            ?: localSecrets.getProperty("MAPBOX_TOKEN")?.takeIf { it.isNotBlank() }
+            ?: System.getenv("MAPBOX_TOKEN")?.takeIf { it.isNotBlank() }
+            ?: providers.gradleProperty("MAPBOX_TOKEN").orNull
+        manifestPlaceholders["MAPBOX_TOKEN"] = mapboxToken.orEmpty()
     }
 
     buildTypes {
@@ -44,6 +68,12 @@ android {
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 

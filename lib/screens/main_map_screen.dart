@@ -60,7 +60,9 @@ class _MainMapScreenState extends State<MainMapScreen> {
     _initNavigation();
     _loadData();
     _loadSavedDestinations();
-    MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+    if (MapboxConfig.accessToken.isNotEmpty) {
+      MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+    }
     Future.delayed(const Duration(seconds: 1), _logDiagnostics);
   }
 
@@ -348,14 +350,22 @@ class _MainMapScreenState extends State<MainMapScreen> {
                     ),
 
                     if (showSearch)
-                      SearchOverlay(
-                        isTransportMode: isTransportMode,
-                        userPosition: currentPosition != null
-                            ? LatLng(currentPosition.latitude,
-                                currentPosition.longitude)
-                            : null,
-                        onSelectDestination: _startNavigation,
-                        onClose: () => nav.setShowSearch(false),
+                      Positioned(
+                        top: 120,
+                        left: 16,
+                        right: 16,
+                        child: SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.6,
+                          child: SearchOverlay(
+                            isTransportMode: isTransportMode,
+                            userPosition: currentPosition != null
+                                ? LatLng(currentPosition.latitude,
+                                    currentPosition.longitude)
+                                : null,
+                            onSelectDestination: _startNavigation,
+                            onClose: () => nav.setShowSearch(false),
+                          ),
+                        ),
                       ),
 
                     PathOptionsPanel(

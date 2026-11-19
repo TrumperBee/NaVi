@@ -49,8 +49,9 @@
             android:enabled="true"
             android:exported="false" />
         
-        <!-- Mapbox Access Token: injected via MAPBOX_TOKEN gradle property
-             (set in ~/.gradle/gradle.properties; never committed). -->
+        <!-- Mapbox Access Token: injected at build time from a Flutter
+             dart define, android/key.properties, or the MAPBOX_TOKEN env
+             var. The value is never committed. See docs/BUILD_SETUP.md. -->
         <meta-data
             android:name="com.mapbox.token"
             android:value="${MAPBOX_TOKEN}" />

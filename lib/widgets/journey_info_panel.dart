@@ -5,8 +5,10 @@ import '../design/navi_spacing.dart';
 import '../design/navi_typography.dart';
 import '../models/active_journey.dart';
 import '../models/route_segment.dart';
+import '../models/transport_models.dart';
 import '../utils/distance_formatter.dart';
 import 'maneuver_transition.dart';
+import 'pre_trip_card.dart';
 import 'route_badge.dart';
 
 /// The bottom info zone of the Active Navigation screen.
@@ -14,12 +16,19 @@ import 'route_badge.dart';
 /// Real journey content instead of a blank white card: remaining time + distance
 /// as large legible numerals, the current step in plain language (animated via
 /// [ManeuverTransition] on every segment change), a greyed preview of the next
-/// steps, the running fare once boarding begins, and a fixed bottom action row
-/// (voice toggle + red End Trip).
+/// steps, the running fare + the stage to get off at while riding, and a fixed
+/// bottom action row (voice toggle + red End Trip behind a confirm dialog).
 class JourneyInfoPanel extends StatelessWidget {
   /// The live journey. All numbers are derived from this single object so the
   /// panel can never disagree with the map or the maneuver banner.
   final ActiveJourney journey;
+
+  /// Stages for resolving the alighting stage's name from its id.
+  final List<StageModel> stages;
+
+  /// Derived extras (stop counts) for the "Get off at …" line; optional —
+  /// the line degrades gracefully when absent.
+  final PreTripExtras? extras;
 
   final bool voiceGuidanceEnabled;
   final ValueChanged<bool> onToggleVoiceGuidance;
@@ -28,12 +37,69 @@ class JourneyInfoPanel extends StatelessWidget {
   const JourneyInfoPanel({
     super.key,
     required this.journey,
+    this.stages = const [],
+    this.extras,
     required this.voiceGuidanceEnabled,
     required this.onToggleVoiceGuidance,
     required this.onEndTrip,
   });
 
   static const Color _kEndTripRed = Color(0xFFC62828);
+
+  /// True when [text] is a bare `lat, lng` pair — never render those raw
+  /// coordinates as user-facing copy on the navigation screen.
+  static bool looksLikeCoordinates(String text) {
+    return RegExp(r'^[+-]?\d{1,3}\.\d+\s*,\s*[+-]?\d{1,3}\.\d+$')
+        .hasMatch(text.trim());
+  }
+
+  /// Plain-language wording for a segment's current step:
+  /// walk legs keep their `Walk to …` label (with a coordinate-safe fallback
+  /// to "your destination"), ride legs read `On Route 58 to …`. Shared by the
+  /// panel's step card and the maneuver banner so they can never disagree.
+  static String plainStepText(RouteSegment segment) {
+    if (segment.mode == SegmentMode.matatu) {
+      final text = segment.label.replaceFirst('Ride ', 'On ');
+      const marker = ' to ';
+      final index = text.lastIndexOf(marker);
+      if (index >= 0) {
+        final tail = text.substring(index + marker.length).trim();
+        if (looksLikeCoordinates(tail)) return text.substring(0, index);
+      }
+      return text;
+    }
+    return _plainWalkText(segment.label);
+  }
+
+  /// Label wording for the muted "up next" preview rows: keeps the builder's
+  /// original wording (e.g. `Ride Route 58 to …`) but applies the same
+  /// coordinate guards, so a raw `lat, lng` never reaches the screen.
+  static String plainSegmentLabel(RouteSegment segment) {
+    if (segment.mode == SegmentMode.walk) {
+      return _plainWalkText(segment.label);
+    }
+    final label = segment.label;
+    const marker = ' to ';
+    final index = label.lastIndexOf(marker);
+    if (index >= 0) {
+      final tail = label.substring(index + marker.length).trim();
+      if (looksLikeCoordinates(tail)) return label.substring(0, index);
+    }
+    return looksLikeCoordinates(label) ? 'Destination' : label;
+  }
+
+  static String _plainWalkText(String label) {
+    const prefix = 'Walk to ';
+    if (label.startsWith(prefix)) {
+      final target = label.substring(prefix.length).trim();
+      if (target.isEmpty || looksLikeCoordinates(target)) {
+        return 'Walk to your destination';
+      }
+    } else if (looksLikeCoordinates(label)) {
+      return 'Walk to your destination';
+    }
+    return label;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +130,7 @@ class JourneyInfoPanel extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildUpcomingSteps(context, isDark),
-                      _buildFareTotal(context, isDark),
+                      _buildFareAndStop(context, isDark),
                     ],
                   ),
                 ),
@@ -92,7 +158,7 @@ class JourneyInfoPanel extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('FINAL TIME',
+              Text('REMAINING',
                   style: NaviType.caption.copyWith(
                       color: NaviColors.textSecondary(isDark),
                       letterSpacing: 0.4)),
@@ -172,22 +238,13 @@ class JourneyInfoPanel extends StatelessWidget {
               size: 32,
               color: _modeIconColor(segment, isDark),
             ),
-      title: _currentStepText(segment),
+      title: plainStepText(segment),
       subtitle: _stepContextLine(segment),
       trailing: segment.mode == SegmentMode.matatu && segment.routeNumber != null
           ? RouteBadge(routeNumber: segment.routeNumber!)
           : null,
       isDark: isDark,
     );
-  }
-
-  String _currentStepText(RouteSegment segment) {
-    switch (segment.mode) {
-      case SegmentMode.walk:
-        return segment.label.replaceFirst('Walk to ', 'Walking to ');
-      case SegmentMode.matatu:
-        return segment.label.replaceFirst('Ride ', 'On ');
-    }
   }
 
   String _stepContextLine(RouteSegment segment) {
@@ -221,7 +278,7 @@ class JourneyInfoPanel extends StatelessWidget {
         for (final segment in upcoming) ...[
           _UpcomingStepRow(
             mode: segment.mode,
-            text: segment.label,
+            text: plainSegmentLabel(segment),
             routeNumber: segment.routeNumber,
             isDark: isDark,
           ),
@@ -231,16 +288,19 @@ class JourneyInfoPanel extends StatelessWidget {
     );
   }
 
-  // ============== RUNNING FARE TOTAL ==============
+  // ============== RUNNING FARE + GET-OFF STAGE ==============
 
-  Widget _buildFareTotal(BuildContext context, bool isDark) {
+  /// Fare so far while walking/riding, plus — while on the matatu — the stage
+  /// to get off at with its stop count ("Get off at Jerusalem, 5 stops").
+  /// Hidden entirely before any fare accrues and no ride is in progress.
+  Widget _buildFareAndStop(BuildContext context, bool isDark) {
     // Fare accrues from the moment the user boards. Walking segments always
-    // contribute 0, so before boarding begins the total is KSh 0 and the row is
-    // omitted entirely.
+    // contribute 0, so before boarding begins the total is KSh 0.
     final runningFare = journey.segments
         .take(journey.currentSegmentIndex + 1)
         .fold<int>(0, (sum, s) => sum + (s.fareEstimate?.amountKsh ?? 0));
-    if (runningFare <= 0) return const SizedBox.shrink();
+    final getOff = _getOffLine();
+    if (runningFare <= 0 && getOff == null) return const SizedBox.shrink();
 
     return Container(
       margin: const EdgeInsets.only(top: NaviSpacing.xs),
@@ -250,26 +310,96 @@ class JourneyInfoPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(NaviRadius.card),
         border: Border.all(color: NaviColors.dividerC(isDark)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('FARE SO FAR',
-              style: NaviType.caption.copyWith(
-                  color: NaviColors.textSecondary(isDark),
-                  letterSpacing: 0.4)),
-          TweenMetric(
-            value: runningFare.toDouble(),
-            builder: (context, v) => Text(
-              'KSh ${v.round()}',
-              style: NaviType.title.copyWith(
-                color: NaviColors.textPrimary(isDark),
-                fontWeight: FontWeight.w800,
+          if (runningFare > 0)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('FARE SO FAR',
+                    style: NaviType.caption.copyWith(
+                        color: NaviColors.textSecondary(isDark),
+                        letterSpacing: 0.4)),
+                TweenMetric(
+                  value: runningFare.toDouble(),
+                  builder: (context, v) => Text(
+                    'KSh ${v.round()}',
+                    style: NaviType.title.copyWith(
+                      color: NaviColors.textPrimary(isDark),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          if (runningFare > 0 && getOff != null)
+            Padding(
+              padding: const EdgeInsets.only(top: NaviSpacing.xs),
+              child: Container(height: 1, color: NaviColors.dividerC(isDark)),
+            ),
+          if (getOff != null)
+            Padding(
+              padding: runningFare > 0
+                  ? const EdgeInsets.only(top: NaviSpacing.xs)
+                  : EdgeInsets.zero,
+              child: Row(
+                children: [
+                  Icon(Icons.logout, size: 16, color: NaviColors.textSecondary(isDark)),
+                  const SizedBox(width: NaviSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      getOff,
+                      style: NaviType.body.copyWith(
+                        color: NaviColors.textPrimary(isDark),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
         ],
       ),
     );
+  }
+
+  /// "Get off at Jerusalem, 5 stops" while riding; null otherwise. The stage
+  /// name resolves from its id (falling back to the segment label's `to …`
+  /// tail, never a raw coordinate); the stop count comes from [extras].
+  String? _getOffLine() {
+    final segment = journey.currentSegment;
+    if (segment == null ||
+        journey.isComplete ||
+        segment.mode != SegmentMode.matatu) {
+      return null;
+    }
+    final stops = extras?.stopCounts[journey.currentSegmentIndex];
+    final stopText = stops == null
+        ? null
+        : (stops == 1 ? '1 stop' : '$stops stops');
+    final name = _alightStageName(segment);
+    if (name == null) {
+      return stopText == null ? null : 'Get off in $stopText';
+    }
+    return stopText == null ? 'Get off at $name' : 'Get off at $name, $stopText';
+  }
+
+  String? _alightStageName(RouteSegment segment) {
+    final id = segment.toStageId;
+    if (id != null && id.isNotEmpty) {
+      for (final stage in stages) {
+        if (stage.id == id) return stage.name;
+      }
+    }
+    const marker = ' to ';
+    final label = segment.label;
+    final index = label.lastIndexOf(marker);
+    if (index >= 0) {
+      final target = label.substring(index + marker.length).trim();
+      if (target.isNotEmpty && !looksLikeCoordinates(target)) return target;
+    }
+    return null;
   }
 
   // ============== BOTTOM ACTION ROW (fixed at panel bottom) ==============
@@ -287,7 +417,7 @@ class JourneyInfoPanel extends StatelessWidget {
           const SizedBox(width: NaviSpacing.md),
           Expanded(
             child: FilledButton.icon(
-              onPressed: onEndTrip,
+              onPressed: () => _confirmEndTrip(context),
               style: FilledButton.styleFrom(
                 backgroundColor: _kEndTripRed,
                 foregroundColor: Colors.white,
@@ -301,6 +431,35 @@ class JourneyInfoPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Red End Trip is destructive mid-journey, so it always passes through a
+  /// confirm dialog before [onEndTrip] fires.
+  Future<void> _confirmEndTrip(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('End this trip?'),
+        content: const Text(
+            'You still have a way to go. End the trip and stop navigation?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep riding'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: _kEndTripRed,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('End Trip'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) onEndTrip();
   }
 }
 

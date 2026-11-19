@@ -1,0 +1,18 @@
+# android/key.properties.example
+#
+# Copy this file to `android/key.properties` and replace the placeholder with
+# YOUR real Mapbox public token. `key.properties` is gitignored — never commit
+# a real token. Full instructions: docs/BUILD_SETUP.md
+#
+# This file only feeds the ANDROID NATIVE MAP SDK (manifest placeholder). The
+# Dart geocoder (lib/services/mapbox_config.dart) reads the same token from
+# `--dart-define=MAPBOX_TOKEN=...` at build/run time; that part is documented
+# in docs/BUILD_SETUP.md.
+#
+# If you only build through `flutter run` / `flutter build` with
+# `--dart-define=MAPBOX_TOKEN=...`, you do NOT need this file at all.
+MAPBOX_TOKEN=pk.your_real_mapbox_public_token_here
+
+# Optional: path to the Android SDK for direct Android Studio / gradle builds.
+# The Flutter tool maintains sdk.dir itself in android/local.properties.
+# sdk.dir=C:/path/to/android-sdk

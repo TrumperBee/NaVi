@@ -142,6 +142,12 @@ class _SavedDestinationDialogState extends State<SavedDestinationDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = context.read<SettingsService>();
+    // Long-press on a set pill opens this dialog: it both relocates (pick a
+    // new location) and clears an existing Home / Work / Campus slot.
+    final canClear = _placedKind(widget.type) != null &&
+        settings.savedPlace(_placedKind(widget.type)!) != null;
+
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Text(_title),
@@ -232,6 +238,15 @@ class _SavedDestinationDialogState extends State<SavedDestinationDialog> {
         ),
       ),
       actions: [
+        if (canClear)
+          TextButton(
+            onPressed: () {
+              final kind = _placedKind(widget.type);
+              if (kind != null) settings.clearSavedPlace(kind);
+              Navigator.of(context).pop(true);
+            },
+            child: Text('Clear ${widget.type.label}'),
+          ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),

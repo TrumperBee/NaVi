@@ -1,0 +1,272 @@
+key,route_number,headsign,shape_id,orientation,avg_endpoint_error_m,status
+10000107D11_0,107D,Ruaka,1107D111,reverse,7,matched
+10000107D11_1,107D,Ruiru,1107D110,reverse,12,matched
+10000114011_0,114R,Ngara,10114110,forward,51,matched
+10000114011_1,114R,Limuru,10114111,forward,51,matched
+10000116011_0,116,Koja,10116110,forward,6,matched
+10000116011_1,116,Limuru,10116111,forward,7,matched
+10100011A11_0,11A,Odeon,1011A111,reverse,24,matched
+10100011A11_1,11A,Highridge,1011A110,reverse,13,matched
+10200010811_0,108,UNEP,10108110,forward,20,matched
+10200010811_1,108,Gichagi,10108111,forward,9,matched
+10300011F11_0,11B,Odeon,1011F110,forward,11,matched
+10300011F11_1,11B,Ruaka,1011F111,forward,18,matched
+10300106011_0,106,Koja,10106110,forward,18,matched
+10300106011_1,106,Banana,10106111,forward,30,matched
+10400010711_0,107,Odeon,10107110,forward,10,matched
+10400010711_1,107,Ndenderu,10107111,forward,14,matched
+20000002311_0,23W,Koja,20023111,reverse,20,matched
+20000002311_1,23W,Westlands,20023110,reverse,21,matched
+20000004511_0,45K,Odeon,20044110,forward,28,matched
+20000004511_1,45K,KU,20045111,forward,34,matched
+20000004512_0,45G,Tusker,20045120,forward,33,matched
+20000004512_1,45G,Githurai,20045121,forward,56,matched
+20000004513_0,45P,Githurai,20045130,forward,108,matched
+20000004513_1,45P,Proggie,20045131,forward,110,matched
+20000145011_0,145,Tusker,20145110,forward,31,matched
+20000145011_1,145,Ruiru,20145111,forward,38,matched
+20000237011_0,237,Tusker,20237111,reverse,1,matched
+20000237011_1,237,Thika,20237110,reverse,2,matched
+20100010011_0,100,Kaka,20100111,reverse,66,matched
+20100010011_1,100,Kiambu,20100110,reverse,69,matched
+20100012011_0,120,Githunguri,20120110,forward,60,matched
+20100012011_1,120,Kaka,20120111,forward,68,matched
+20100012111_0,121,Kaka,20121111,reverse,62,matched
+20100012111_1,121,Ndumberi,20121110,reverse,63,matched
+20100100A11_0,100A,Ngara,2100A110,forward,9,matched
+20100100A11_1,100A,Kiambu Hospital,2100A111,forward,16,matched
+20101007700_0,0027,Kariobangi,20027111,reverse,41,matched
+20101007700_1,0027,OTC,20077110,reverse,41,matched
+20104003910_0,0039,City Cabanas,20039110,forward,33,matched
+20104003910_1,0039,Bypass Ruiru,20039111,forward,57,matched
+20400005311_0,53,Roasters,20053110,forward,82,matched
+20400005311_1,53,Marurui,20053111,forward,84,matched
+20700145D01_0,145D,Torrents,20000721,reverse,64,matched
+20700145D01_1,145D,Ruiru,20000720,reverse,65,matched
+20701293011_0,29/30,Ngara,22930110,forward,32,matched
+20701293011_1,29/30,Mathare,22930111,forward,34,matched
+20702000611_0,6,Koja,20006111,reverse,37,matched
+20702000611_1,6,Eastleigh,20006110,reverse,39,matched
+20800203001_0,2030,Allsops,22030110,forward,56,matched
+20800203001_1,2030,Rounda,22030111,forward,61,matched
+20801002511_0,25,Odeon,20025110,forward,27,matched
+20801002511_1,25,Baba Dogo,20025111,forward,59,matched
+20801025A11_0,25A,Odeon,2025A110,forward,12,matched
+20801025A11_1,25A,Lucky Summer,2025A111,forward,12,matched
+20807042011_0,42,Allsops,20042110,forward,8,matched
+20807042011_1,42,Dandora,20042111,forward,30,matched
+20901043011_0,43,Bus Station,20043110,forward,4,matched
+20901043011_1,43,Ngumba,20043111,forward,8,matched
+21000004911_0,49,Odeon,20049110,forward,22,matched
+21000004911_1,49,Sunton,20049111,forward,33,matched
+21000017B11_0,17B,Bus Station,2017B111,reverse,41,matched
+21000017B11_1,17B,Mwiki,2017B110,reverse,60,matched
+21100004411_0,44G,Odeon,20044121,reverse,34,matched
+21100004411_1,44G,KU,20044120,reverse,36,matched
+21100004412_0,44Z,Odeon,20045110,forward,41,matched
+21100004412_1,44Z,KU,20044111,forward,45,matched
+21100004421_0,44K,Roysambu,20044210,forward,29,matched
+21100004421_1,44K,KU,20044211,forward,46,matched
+21200017B12_0,17B_2,Roysambu,2017B120,forward,55,matched
+21200017B12_1,17B_2,Mwiki,2017B121,forward,58,matched
+30000004611_0,46H,OTC,30046111,reverse,59,matched
+30000004611_1,46H,Huruma,30046110,reverse,59,matched
+30000046B11_0,46B,Tusker,3046B111,reverse,19,matched
+30000046B11_1,46B,Rounda,3046B110,reverse,19,matched
+30007004111_0,41,Gikomba,30041111,reverse,7,matched
+30007004111_1,41,Dandora,30041110,reverse,9,matched
+30100000711_0,7,Town,30007111,reverse,41,matched
+30100000711_1,7,Gikomba,30007110,reverse,41,matched
+30100011C11_0,11C,Odeon,3011C110,forward,33,matched
+30100011C11_1,11C,Pangani Terminus,3011C111,forward,40,matched
+30101000311_0,3N,Ngara,30003110,forward,80,matched
+30101000311_1,3N,Gikomba,30003111,forward,85,matched
+30600017A11_0,17Aky,Eastleigh,3017A111,reverse,60,matched
+30600017A11_1,17Aky,Kayole,3017A110,reverse,62,matched
+30600018C11_0,18C,Kayole,3018C110,forward,60,matched
+30600018C11_1,18C,Eastleigh,3018C111,forward,68,matched
+30600186211_0,16/62,Bus station,31862111,reverse,39,matched
+30600186211_1,16/62,Kayole,31862110,reverse,41,matched
+30603373812_0,3738,Rounder,33738110,forward,33,matched
+30603373812_1,3738,Ruai,33738111,forward,3,matched
+30800001411_0,14,OTC,30014110,forward,69,matched
+30800001411_1,14,Kariobangi,30014111,forward,71,matched
+30800002811_0,28,Gikomba,30028110,forward,9,matched
+30800002811_1,28,Kariobangi,30028111,forward,21,matched
+30907003211_0,32D,OTC,30032110,forward,21,matched
+30907003211_1,32D,Dandora,30032111,forward,25,matched
+40100003311_0,33DP,Muthurwa,40033110,forward,72,matched
+40100003311_1,33DP,Pipeline,40033111,forward,40,matched
+40101040501_0,405,City Stadium,40405210,forward,8,matched
+40101040501_1,405,Nyayo Stadium,40405211,forward,10,matched
+40102040511_0,69,Muthurwa,40405110,forward,43,matched
+40102040511_1,69,General Motors,40405111,forward,45,matched
+40200000601_0,6E,Church Army,40006110,forward,24,matched
+40200000601_1,6E,Joster,40006111,forward,32,matched
+40201002311_0,23KS,Gill House,40023110,forward,2,matched
+40201002311_1,23KS,Kariobangi South,40023111,forward,19,matched
+40301707111_0,70/71,Muthurwa,47071111,reverse,151,matched
+40301707111_1,70/71,Lunga Lunga,47071110,reverse,156,matched
+40401001011_0,10,Muthurwa,40010110,forward,38,matched
+40401001011_1,10,Maringo,40010111,forward,40,matched
+40403002611_0,26S,Makadara,40026210,forward,18,matched
+40403002611_1,26S,Kariobangi,40026211,forward,2,matched
+40501002611_0,26,Makadara,40026110,forward,23,matched
+40501002611_1,26,Kariobangi,40026111,forward,24,matched
+40601003611_0,36,City Stadium,40036111,reverse,64,matched
+40601003611_1,36,Dandora,40036110,reverse,64,matched
+40601005811_0,58,Ambassadeur,40058111,reverse,61,matched
+40601005811_1,58,Buruburu,40058110,reverse,74,matched
+40700003311_0,33DC,Donholm,40033210,forward,74,matched
+40700003311_1,33DC,Carbanas,40033211,forward,51,matched
+40700003411_0,34J,Ambassadeur,40034110,forward,55,matched
+40700003411_1,34J,JKIA,40034111,forward,59,matched
+40700033C11_0,33C,Commercial,40033510,forward,33,matched
+40700033C11_1,33C,Cabanas,40033511,forward,41,matched
+40701003311_0,33GTB,Commercial,40033410,forward,4,matched
+40701003311_1,33GTB,Gate B,40033411,forward,19,matched
+40702002001_0,20,Mama Lucy,40020110,forward,0,matched
+40702002001_1,20,Mwiki,40020111,forward,0,matched
+40702034B11_0,34B,Ambassadeur,4034B110,forward,57,matched
+40702034B11_1,34B,Jacaranda,4034B111,forward,62,matched
+40702196111_0,1961K,OTC,41961111,reverse,7,matched
+40702196111_1,1961K,Kayole,41961110,reverse,7,matched
+40702196112_0,1961Kd,Donholm,41961121,reverse,56,matched
+40702196112_1,1961Kd,Kayole,41961120,reverse,43,matched
+40703196011_0,1960,Kamukunji,41960110,forward,2,matched
+40703196011_1,1960,Kayole,41960111,forward,2,matched
+40704356001_0,3560_2,Donholm,43560210,forward,2,matched
+40704356001_1,3560_2,Umoja 2,43560211,forward,91,matched
+40704356011_0,35/60,Tusker,43560110,forward,2,matched
+40704356011_1,35/60,Umoja,43560111,forward,6,matched
+4070500SK11_0,39SK,Tusker,43560221,reverse,5,matched
+4070500SK11_1,39SK,Kayole Junction,43560220,reverse,8,matched
+40705017A01_0,17A,Rounda,4017A110,forward,37,matched
+40705017A01_1,17A,Kayole,4017A111,forward,23,matched
+40705019C11_0,19Cdc,Town,4019C121,reverse,47,matched
+40705019C11_1,19Cdc,Komarocks,4019C120,reverse,49,matched
+4070519C211_0,19C2,Donholm,4019C211,reverse,92,matched
+4070519C211_1,19C2,Komarocks,4019C210,reverse,96,matched
+40705383911_0,38/39,Muthurwa,43839111,reverse,46,matched
+40705383911_1,38/39,Ruai,43839110,reverse,47,matched
+50000002412_0,24BK,Bomas,50024210,forward,23,matched
+50000002412_1,24BK,Karen,50024211,forward,24,matched
+50100001111_0,11,Bus Station,50011110,forward,28,matched
+50100001111_1,11,Hazina,50011111,forward,32,matched
+50100001121_0,11_2,Bus Station,50011120,forward,28,matched
+50100001121_1,11_2,Hazina,50011121,forward,31,matched
+50201014A11_0,14A,Bus Station,5014A110,forward,28,matched
+50201014A11_1,14A,Strathmore,5014A111,forward,26,matched
+50201014B11_0,14B,Bus Station,5014B111,reverse,55,matched
+50201014B11_1,14B,TMall,5014B110,reverse,57,matched
+50203001611_0,16,Bus Station,50016110,forward,34,matched
+50203001611_1,16,Highrise,50016111,forward,52,matched
+50204001511_0,15,Bus Station,50015111,reverse,9,matched
+50204001511_1,15,Langata,50015110,reverse,31,matched
+50205012511_0,125,Railways,50125110,forward,62,matched
+50205012511_1,125,Ongata Rongai,50125111,forward,66,matched
+50205012601_0,126RK,Ongata Rongai,50126210,forward,10,matched
+50205012601_1,126RK,Kiserian,50126211,forward,44,matched
+50205012611_0,126,Railways,50126111,reverse,59,matched
+50205012611_1,126,Kiserian,50126110,reverse,92,matched
+50206002411_0,24,Karen,50024110,forward,4,matched
+50206002411_1,24,Ambassadeur,50024111,forward,6,matched
+50300012C11_0,12C,Bus Station,5012C110,forward,29,matched
+50300012C11_1,12C,Mugoya,5012C111,forward,30,matched
+50301012D11_0,12D,Bus Station,5012D110,forward,25,matched
+50301012D11_1,12D,Amboseli,5012D111,forward,30,matched
+50600003311_0,33IMR,Commercial,50033110,forward,16,matched
+50600003311_1,33IMR,Imara Daima,50033111,forward,19,matched
+50600033A11_0,33MKR,Commercial,50033610,forward,29,matched
+50600033A11_1,33MKR,St. Bakhita,50033611,forward,33,matched
+50700003311_0,33UTW,Ambassadeur,50033310,forward,11,matched
+50700003311_1,33UTW,Utawala,50033311,forward,12,matched
+50700014501_0,145B,Bypass,50145111,reverse,17,matched
+50700014501_1,145B,Ruiru,50145110,reverse,17,matched
+50700033H01_0,33H,Cabanas,50033270,forward,31,matched
+50700033H01_1,33H,Bypass,50033271,forward,42,matched
+50701003311_0,33TP,Commercial,50033130,forward,32,matched
+50701003311_1,33TP,Pipeline,50033131,forward,43,matched
+50702003311_0,33FED,Commercial,5033140,forward,1,matched
+50702003311_1,33FED,Posta,5033141,forward,16,matched
+50703033C11_0,33B,Commercial,5033C181,reverse,3,matched
+50703033C11_1,33B,Baraka,5033C180,reverse,12,matched
+50703033J01_0,33J,Cabanas,50033261,reverse,24,matched
+50703033J01_1,33J,Githunguri,50033260,reverse,29,matched
+50800011011_0,110,Railways Uchumi,50110110,forward,8,matched
+50800011011_1,110,Kitengela,50110111,forward,46,matched
+50901011011_0,110ATH,Railways Uchumi,50110210,forward,49,matched
+50901011011_1,110ATH,Makadara,50110211,forward,55,matched
+50901011012_0,110AK,Devki Athiriver,50110120,forward,21,matched
+50901011012_1,110AK,Kitengela,50110121,forward,26,matched
+60000004611_0,46Y,Kencom,60046121,reverse,66,matched
+60000004611_1,46Y,Yaya Centre,60046120,reverse,71,matched
+60101007C11_0,7C,Kencom,6007C111,reverse,63,matched
+60101007C11_1,7C,Kenyatta National Hospital,6007C110,reverse,67,matched
+60200004611_0,46K,Kencom,60046111,reverse,53,matched
+60200004611_1,46K,Kawangware,60046110,reverse,60,matched
+60201005611_0,56,Railways,60056111,reverse,34,matched
+60201005611_1,56,Kanungaga,60056110,reverse,42,matched
+70000000311_0,3U/3,Dagoretti Corner,70003210,forward,7,matched
+70000000311_1,3U/3,Uthiru,70003211,forward,12,matched
+70000010311_0,103,Dagoretti Corner,70103210,forward,7,matched
+70000010311_1,103,Wangige,70103211,forward,7,matched
+70000012911_0,129,Kikuyu,70129110,forward,16,matched
+70000012911_1,129,Wangige,70129111,forward,16,matched
+70000203311_0,33NG,Racecourse Road,70033110,forward,4,matched
+70000203311_1,33NG,Ngumo,70033111,forward,7,matched
+70100203411_0,34L,KNH,70034111,reverse,11,matched
+70100203411_1,34L,Langata,70034110,reverse,12,matched
+70101013301_0,33SB,Ngumo,70033210,forward,6,matched
+70101013301_1,33SB,South B,70033211,forward,9,matched
+70200000811_0,8,Railways,70008111,reverse,18,matched
+70200000811_1,8,Kibera,70008110,reverse,22,matched
+70200003211_0,32A,Kencom,70032111,reverse,52,matched
+70200003211_1,32A,Ayani,70032110,reverse,56,matched
+70201024C11_0,24C,Kencom,7024C110,forward,8,matched
+70201024C11_1,24C,Hardy,7024C111,forward,6,matched
+70301000511_0,5,Kencom,70005111,reverse,64,matched
+70301000511_1,5,Jamhuri,70005110,reverse,71,matched
+70400011111_0,111,Railways,70111110,forward,16,matched
+70400011111_1,111,Ngong,70111111,forward,20,matched
+70400012611_0,126N,Ngong,70126111,reverse,46,matched
+70400012611_1,126N,Kiserian,70126110,reverse,68,matched
+70401000111_0,1,Karen,70001110,forward,75,matched
+70401000111_1,1,Dagoretti Market,70001111,forward,75,matched
+70500004W11_0,4W,Kencom/Ambassadeur,7004W110,forward,51,matched
+70500004W11_1,4W,Kaberia,7004W111,forward,54,matched
+70600010211_0,102,Railways,70102111,reverse,22,matched
+70600010211_1,102,Kikuyu,70102110,reverse,26,matched
+70601000211_0,2,Railways,70002110,forward,39,matched
+70601000211_1,2,Dagoretti Market,70002111,forward,49,matched
+70805046P10_0,046P,Ambassadeur,7046P111,forward,43,matched
+70805046P10_1,046P,Kawangware,7046P110,forward,47,matched
+70904004810_0,0048,Yaya,70048110,forward,50,matched
+80000002311_0,23KG,Odeon,80023110,forward,22,matched
+80000002311_1,23KG,Kangemi,80023111,forward,23,matched
+80000011911_0,119,Koja,80119110,forward,8,matched
+80000011911_1,119,Wangige,80119111,forward,12,matched
+80000114011_0,114W,Ngara,80114110,forward,43,matched
+80000114011_1,114W,Limuru,80114111,forward,50,matched
+80000115011_0,115,Koja,80115111,reverse,16,matched
+80000115011_1,115,Limuru,80115110,reverse,25,matched
+80000119A11_0,119A,Koja,8119A110,forward,12,matched
+80000119A11_1,119A,Gathiga,8119A111,forward,14,matched
+80000135011_0,135,Kaka,81350110,forward,9,matched
+80000135011_1,135,Limuru,81350111,forward,12,matched
+80100011811_0,118,Koja,80118110,forward,15,matched
+80100011811_1,118,Wangige,80118111,forward,16,matched
+80100048A11_0,48A,Odeon,8048A110,forward,24,matched
+80100048A11_1,48A,Lavington,8048A111,forward,24,matched
+80101004811_0,48O,Odeon,80048110,forward,23,matched
+80101004811_1,48O,Othaya Road,80048111,forward,85,matched
+80101048B11_0,48B,Odeon,8048B110,forward,24,matched
+80101048B11_1,48B,Othaya Road,8048B111,forward,24,matched
+80200004811_0,48K,Westlands,80048210,forward,9,matched
+80200004811_1,48K,Kawangware,80048211,forward,12,matched
+80200048C11_0,48C,Odeon,8048C110,forward,70,matched
+80200048C11_1,48C,Yaya,8048C111,forward,72,matched
+80400003011_0,30,Odeon,80030110,forward,23,matched
+80400003011_1,30,Uthiru,80030111,forward,23,matched
+80500010511_0,105,Kikuyu,80105110,forward,30,matched
+80500010511_1,105,Odeon,80105111,forward,32,matched

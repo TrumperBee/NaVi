@@ -26,6 +26,15 @@ class NaviType {
     color: NaviColors.ink,
   );
 
+  /// The "NaVi" display wordmark in the homepage header. Archivo Black is
+  /// reserved for this wordmark alone.
+  static const wordmark = TextStyle(
+    fontFamily: displayFontFamily,
+    fontSize: 28,
+    height: 1.0,
+    color: NaviColors.ink,
+  );
+
   static const title = TextStyle(
     fontFamily: uiFontFamily,
     fontWeight: FontWeight.w700,

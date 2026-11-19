@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' show max;
 import 'dart:ui' as ui;
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:latlong2/latlong.dart';
@@ -14,6 +15,7 @@ class MapboxMapManager {
   PolylineAnnotationManager? _polylineManager;
   CircleAnnotationManager? _circleManager;
   bool _ready = false;
+  bool get isReady => _ready;
 
   Future<void> onMapCreated(MapboxMap map) async {
     _mapboxMap = map;
@@ -67,6 +69,75 @@ class MapboxMapManager {
     await _circleManager?.deleteAll();
   }
 
+  Future<void> clearPoints() async {
+    if (!_ready) return;
+    await _pointManager?.deleteAll();
+  }
+
+  Future<void> addStartDot(LatLng point) async {
+    if (!_ready) return;
+    try {
+      final icon = await _createMarkerImage(
+        color: AppConstants.nairobiGreen,
+        icon: Icons.circle,
+        size: 28,
+      );
+      if (icon == null) return;
+      await _pointManager?.createMulti([
+        PointAnnotationOptions(
+          geometry: _pointToJson(point),
+          iconSize: 1.0,
+          iconImage: icon,
+        ),
+      ]);
+    } catch (_) {}
+  }
+
+  /// The blue "you are here" dot used by the Route Preview.
+  Future<void> addPreviewUserDot(LatLng point) async {
+    if (!_ready) return;
+    try {
+      final icon = await _createMarkerImage(
+        color: NaviColors.signalBlue,
+        icon: Icons.circle,
+        size: 20,
+      );
+      if (icon == null) return;
+      await _pointManager?.createMulti([
+        PointAnnotationOptions(
+          geometry: _pointToJson(point),
+          iconSize: 1.0,
+          iconImage: icon,
+        ),
+      ]);
+    } catch (_) {}
+  }
+
+  /// A coloured pin with a white label chip baked above it, used by the Route
+  /// Preview for the boarding stage (emerald) and the destination (red).
+  ///
+  /// The annotation is bottom-anchored so the pin's tip — not the chip — sits
+  /// exactly on [point].
+  Future<void> addLabeledPin(
+    LatLng point, {
+    required Color color,
+    required String label,
+  }) async {
+    if (!_ready) return;
+    try {
+      final icon = await _createLabeledMarkerImage(color: color, label: label);
+      if (icon == null) return;
+      await _pointManager?.createMulti([
+        PointAnnotationOptions(
+          geometry: _pointToJson(point),
+          iconSize: 1.0,
+          iconImage: icon,
+          iconAnchor: IconAnchor.BOTTOM,
+        ),
+      ]);
+    } catch (_) {}
+  }
+
   Future<void> addDestinationMarker(LatLng point) async {
     if (!_ready) return;
     try {
@@ -95,11 +166,13 @@ class MapboxMapManager {
         size: 36,
       );
       if (icon == null) return;
-      final options = stages.map((s) => PointAnnotationOptions(
-        geometry: _pointToJson(s.location),
-        iconSize: 1.0,
-        iconImage: icon,
-      )).toList();
+      final options = stages
+          .map((s) => PointAnnotationOptions(
+                geometry: _pointToJson(s.location),
+                iconSize: 1.0,
+                iconImage: icon,
+              ))
+          .toList();
       await _pointManager?.createMulti(options);
     } catch (_) {}
   }
@@ -113,11 +186,13 @@ class MapboxMapManager {
         size: 32,
       );
       if (icon == null) return;
-      final options = places.map((p) => PointAnnotationOptions(
-        geometry: _pointToJson(p.location),
-        iconSize: 1.0,
-        iconImage: icon,
-      )).toList();
+      final options = places
+          .map((p) => PointAnnotationOptions(
+                geometry: _pointToJson(p.location),
+                iconSize: 1.0,
+                iconImage: icon,
+              ))
+          .toList();
       await _pointManager?.createMulti(options);
     } catch (_) {}
   }
@@ -151,7 +226,8 @@ class MapboxMapManager {
     } catch (_) {}
   }
 
-  Future<void> setPolylineAnnotations(List<PolylineAnnotationOptions> options) async {
+  Future<void> setPolylineAnnotations(
+      List<PolylineAnnotationOptions> options) async {
     if (!_ready) return;
     await _polylineManager?.deleteAll();
     if (options.isEmpty) return;
@@ -255,6 +331,20 @@ class MapboxMapManager {
     );
   }
 
+  /// Linear camera chase used while navigating: eases the camera onto the
+  /// user's puck (short duration so repeated follow-ups read as continuous
+  /// motion rather than a series of flights).
+  Future<void> easeToCenter(LatLng center,
+      {double zoom = 15, int durationMs = 500}) async {
+    await _mapboxMap?.easeTo(
+      CameraOptions(
+        center: Point.fromJson(_pointToMap(center)),
+        zoom: zoom,
+      ),
+      MapAnimationOptions(duration: durationMs, startDelay: 0),
+    );
+  }
+
   Map<String, dynamic> _pointToMap(LatLng point) {
     return {
       'type': 'Point',
@@ -265,9 +355,7 @@ class MapboxMapManager {
   Map<String, dynamic> _lineStringToMap(List<LatLng> points) {
     return {
       'type': 'LineString',
-      'coordinates': points
-          .map((p) => [p.longitude, p.latitude])
-          .toList(),
+      'coordinates': points.map((p) => [p.longitude, p.latitude]).toList(),
     };
   }
 
@@ -312,6 +400,96 @@ class MapboxMapManager {
         key,
         1.0,
         MbxImage(width: w, height: h, data: bytes),
+        false,
+        [],
+        [],
+        null,
+      );
+      return key;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Bakes a pin + white label chip into one Mapbox style image. The chip is
+  /// centred above the pin; the annotation is bottom-anchored at the tip.
+  Future<String?> _createLabeledMarkerImage({
+    required Color color,
+    required String label,
+  }) async {
+    final key = 'preview_pin_${color.toARGB32()}_${label.hashCode}';
+    try {
+      const pixelRatio = 3.0;
+      const chipFontSize = 12.0;
+      const chipHPad = 8.0;
+      const chipVPad = 5.0;
+      const pinSize = 22.0;
+      const gap = 4.0;
+
+      final painter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(
+            fontSize: chipFontSize,
+            fontWeight: FontWeight.w600,
+            color: NaviColors.textPrimaryLight,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+        ellipsis: '…',
+      )..layout(maxWidth: 160);
+
+      final chipWidth = painter.width + chipHPad * 2;
+      final chipHeight = painter.height + chipVPad * 2;
+      final width = max(chipWidth, pinSize);
+      final height = chipHeight + gap + pinSize;
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.scale(pixelRatio);
+
+      final chipRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH((width - chipWidth) / 2, 0, chipWidth, chipHeight),
+        const Radius.circular(8),
+      );
+      canvas.drawRRect(chipRect, Paint()..color = Colors.white);
+      canvas.drawRRect(
+        chipRect,
+        Paint()
+          ..color = const Color(0x22000000)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.5,
+      );
+      painter.paint(
+        canvas,
+        Offset((width - chipWidth) / 2 + chipHPad, chipVPad),
+      );
+
+      final center = Offset(width / 2, chipHeight + gap + pinSize / 2);
+      canvas.drawCircle(center, pinSize / 2, Paint()..color = Colors.white);
+      canvas.drawCircle(
+        center,
+        pinSize / 2 - 1.5,
+        Paint()..color = color,
+      );
+
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(
+        (width * pixelRatio).round(),
+        (height * pixelRatio).round(),
+      );
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return null;
+
+      await _mapboxMap?.style.addStyleImage(
+        key,
+        1.0,
+        MbxImage(
+          width: (width * pixelRatio).round(),
+          height: (height * pixelRatio).round(),
+          data: byteData.buffer.asUint8List(),
+        ),
         false,
         [],
         [],

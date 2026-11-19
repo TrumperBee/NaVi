@@ -76,7 +76,9 @@ class OfflineMapService {
   /// Lazily creates the shared [OfflineManager] and [TileStore] instances.
   Future<void> init() async {
     if (_offlineManager == null) {
-      MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+      if (MapboxConfig.accessToken.isNotEmpty) {
+        MapboxOptions.setAccessToken(MapboxConfig.accessToken);
+      }
       _offlineManager = await OfflineManager.create();
     }
     _tileStore ??= await TileStore.createDefault();

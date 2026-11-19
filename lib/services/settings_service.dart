@@ -417,6 +417,20 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clears a Home / Work / Campus slot (the "Clear Home" action in the
+  /// edit dialog) so the pill falls back to its "Add …" chip. Mirrors
+  /// [setSavedPlace] including the legacy Hive `fav_*` mirror.
+  void clearSavedPlace(SavedPlaceKind kind) {
+    final key = _placeKindKeys[kind];
+    if (key == null) return;
+    _savedPlaces[key] = const SavedPlace.empty();
+    _write(key, const SavedPlace.empty().toJson());
+    _storage.setSetting('fav_${kind.legacyKey}_lat', 0.0);
+    _storage.setSetting('fav_${kind.legacyKey}_lng', 0.0);
+    _storage.setStringSetting('fav_${kind.legacyKey}_name', '');
+    notifyListeners();
+  }
+
   // ==================== DATA MANAGEMENT ====================
 
   /// Clears journey history, stats, and cached searches.
@@ -476,6 +490,59 @@ class SavedPlace {
   const SavedPlace.empty() : this(lat: 0, lng: 0, label: '');
 
   bool get isEmpty => lat == 0 && lng == 0 && label.isEmpty;
+
+  /// City/country-level names that carry no street or neighbourhood detail.
+  /// Every save inside the coverage area would read identically, so a label
+  /// that stops here is never specific enough for an address line.
+  static const Set<String> _contextOnlyLabels = {
+    'nairobi',
+    'nairobi county',
+    'kenya',
+  };
+
+  /// Matches an already-coordinate label ("-1.274, 36.808"), which is kept
+  /// verbatim instead of being split on the comma.
+  static final RegExp _coordinateLine =
+      RegExp(r'^-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?$');
+
+  /// `lat, lng` rounded to 3 decimals (~110 m) — the address-line fallback
+  /// when the reverse geocode yielded nothing specific.
+  String get coordinateText =>
+      '${lat.toStringAsFixed(3)}, ${lng.toStringAsFixed(3)}';
+
+  /// The address line a saved-place pill or row shows under its slot title:
+  /// the most specific part of the stored reverse-geocode label (street or
+  /// neighbourhood, e.g. "Chiromo Road" or "Kasarani") — never just the
+  /// city. Falls back to [coordinateText] when the label is missing, is only
+  /// city/country context, already coordinates, or would merely repeat
+  /// [title] (legacy `fav_*_name` defaults stored the slot name itself).
+  /// The result is never blank, so two places saved at different coordinates
+  /// always read differently.
+  String displaySubtitle({String? title}) {
+    final part = specificAddressPart(label);
+    if (part != null && part.toLowerCase() != title?.toLowerCase()) return part;
+    return coordinateText;
+  }
+
+  /// The most specific segment of a reverse-geocode label. Mapbox orders
+  /// `place_name` most-specific first ("Chiromo Road, Nairobi, Kenya") and
+  /// callers store either that whole string or just its first segment, so
+  /// both forms reduce to the street/neighbourhood here. Null when nothing
+  /// specific remains (blank, or city/country context only).
+  static String? specificAddressPart(String? raw) {
+    final trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    if (_coordinateLine.hasMatch(trimmed)) return trimmed;
+    final parts = trimmed
+        .split(',')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return null;
+    final mostSpecific = parts.first;
+    if (_contextOnlyLabels.contains(mostSpecific.toLowerCase())) return null;
+    return mostSpecific;
+  }
 
   factory SavedPlace.fromJson(String raw) {
     final data = json.decode(raw) as Map<String, dynamic>;

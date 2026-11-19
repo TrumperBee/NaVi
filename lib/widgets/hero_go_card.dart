@@ -150,8 +150,18 @@ class _WalkTimeLabel extends StatelessWidget {
 /// for the hero card, which is otherwise the only bold element on the page.
 class HeroGoCardPlaceholder extends StatelessWidget {
   final VoidCallback? onEnableLocation;
+  final VoidCallback? onOpenSettings;
 
-  const HeroGoCardPlaceholder({super.key, this.onEnableLocation});
+  /// When true the OS will not show the permission dialog again; the only
+  /// recovery is the system settings screen.
+  final bool permanentlyDenied;
+
+  const HeroGoCardPlaceholder({
+    super.key,
+    this.onEnableLocation,
+    this.onOpenSettings,
+    this.permanentlyDenied = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +179,9 @@ class HeroGoCardPlaceholder extends StatelessWidget {
           const Icon(Icons.my_location, color: NaviColors.signalBlue, size: 22),
           const SizedBox(height: NaviSpacing.sm),
           Text(
-            'Enable location to see your nearest stage',
+            permanentlyDenied
+                ? 'Location permission is blocked'
+                : 'Enable location to see your nearest stage',
             style: NaviType.body.copyWith(
               color: NaviColors.textPrimary(isDark),
               fontWeight: FontWeight.w600,
@@ -177,16 +189,23 @@ class HeroGoCardPlaceholder extends StatelessWidget {
           ),
           const SizedBox(height: NaviSpacing.sm),
           Text(
-            'Turn on GPS to promote the closest stage to the top.',
+            permanentlyDenied
+                ? 'Allow location for NaVi in system settings to see the '
+                    'closest stage.'
+                : 'NaVi needs permission to use your location. GPS being on '
+                    'is not enough on its own.',
             style: NaviType.caption.copyWith(
               color: NaviColors.textSecondary(isDark),
             ),
           ),
           const SizedBox(height: NaviSpacing.md),
           FilledButton.icon(
-            onPressed: onEnableLocation,
-            icon: const Icon(Icons.location_on_outlined, size: 18),
-            label: const Text('Enable Location'),
+            onPressed: permanentlyDenied ? onOpenSettings : onEnableLocation,
+            icon: Icon(
+              permanentlyDenied ? Icons.settings : Icons.location_on_outlined,
+              size: 18,
+            ),
+            label: Text(permanentlyDenied ? 'Open Settings' : 'Enable Location'),
             style: FilledButton.styleFrom(
               backgroundColor: NaviColors.transitGreen,
               foregroundColor: Colors.white,

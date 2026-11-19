@@ -11,9 +11,11 @@ import 'package:navi_app/providers/app_state_provider.dart';
 import 'package:navi_app/utils/constants.dart';
 import 'package:navi_app/data/seed_data.dart';
 import 'package:navi_app/services/distance_calculator.dart';
+import 'package:navi_app/services/stage_route_summary.dart';
 import 'package:navi_app/utils/distance_formatter.dart';
 import 'package:navi_app/design/navi_colors.dart';
 import 'package:navi_app/design/navi_typography.dart';
+import 'package:navi_app/widgets/route_badge.dart';
 
 class StageDetailsSheet extends StatefulWidget {
   final StageModel stage;
@@ -45,10 +47,40 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
   bool _isLoadingPrediction = false;
   Map<String, dynamic>? _predictionResult;
 
+  // GTFS-derived rows (route badge + destination) and the stage-level
+  // frequency sentence, loaded from the imported routes.json bundle.
+  List<StageRouteSummary> _routeSummaries = [];
+  bool _isLoadingSummaries = true;
+  String _frequencyText = StageRouteSummaries.noFrequencyText;
+
+  /// Route rows are capped until the user explicitly asks for the full list —
+  /// a stage can be served by 30+ GTFS routes and an unbounded wall of codes
+  /// reads as noise rather than information.
+  static const int _initialRouteRowCount = 6;
+  bool _showAllRoutes = false;
+
+  /// The route number of the row the user last tapped. Kept separately from
+  /// [_selectedRoute] because GTFS summaries and the Firestore/seed route list
+  /// do not always contain the same numbers — without this, tapping a GTFS-only
+  /// route did nothing at all.
+  String? _selectedSummaryNumber;
+
   @override
   void initState() {
     super.initState();
     _loadRoutes();
+    _loadSummaries();
+  }
+
+  Future<void> _loadSummaries() async {
+    final summaries = await StageRouteSummaries.loadForStage(widget.stage);
+    final frequency = await StageRouteSummaries.loadStageFrequency(widget.stage);
+    if (!mounted) return;
+    setState(() {
+      _routeSummaries = summaries;
+      _frequencyText = frequency;
+      _isLoadingSummaries = false;
+    });
   }
 
   Future<void> _loadRoutes() async {
@@ -66,6 +98,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
         // Select first route by default if available
         if (_routes.isNotEmpty) {
           _selectedRoute = _routes.first;
+          _selectedSummaryNumber = _routes.first.number;
           _loadPrediction(_routes.first);
         }
       });
@@ -77,6 +110,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
         _isLoadingRoutes = false;
         if (_routes.isNotEmpty) {
           _selectedRoute = _routes.first;
+          _selectedSummaryNumber = _routes.first.number;
           _loadPrediction(_routes.first);
         }
       });
@@ -240,7 +274,178 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
     );
   }
 
-  Widget _buildRouteChips() {
+  /// One tappable row per GTFS route serving this stage: the route number in
+  /// the yellow PSV badge, then the destination(s) its directions headsign
+  /// toward. When the GTFS bundle yields nothing for this stage (unknown or
+  /// unreadable), fall back to the legacy Firestore/seed chips.
+  Widget _buildRouteList() {
+    if (_isLoadingSummaries) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_routeSummaries.isEmpty) {
+      if (_isLoadingRoutes || _routes.isNotEmpty) {
+        return _buildLegacyChips();
+      }
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(
+          child: Text('No routes available for this stage'),
+        ),
+      );
+    }
+
+    final visibleSummaries = _showAllRoutes
+        ? _routeSummaries
+        : _routeSummaries.take(_initialRouteRowCount).toList();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildRouteListHeader(),
+          const SizedBox(height: 10),
+          for (final summary in visibleSummaries) _buildRouteRow(summary),
+          if (_routeSummaries.length > _initialRouteRowCount)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () =>
+                    setState(() => _showAllRoutes = !_showAllRoutes),
+                child: Text(
+                  _showAllRoutes
+                      ? 'Show fewer routes'
+                      : 'Show all ${_routeSummaries.length} routes',
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Explains what the badge rows are before the user sees them, so a wall of
+  /// route codes reads as "matatus that pass here" instead of noise.
+  Widget _buildRouteListHeader() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final count = _routeSummaries.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          count == 1
+              ? '1 matatu route stops here'
+              : '$count matatu routes stop here',
+          style: NaviType.body.copyWith(
+            color: NaviColors.textPrimary(isDark),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'The code is the matatu number; the arrow is where it is heading. '
+          'Tap a route to select it.',
+          style: NaviType.caption.copyWith(
+            color: NaviColors.textSecondary(isDark),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRouteRow(StageRouteSummary summary) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isSelected = _selectedSummaryNumber == summary.routeNumber ||
+        _selectedRoute?.number == summary.routeNumber;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? AppConstants.nairobiGreen.withValues(alpha: 0.08)
+            : NaviColors.surface(isDark),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelected
+              ? AppConstants.nairobiGreen
+              : NaviColors.dividerC(isDark),
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _selectRouteByNumber(summary.routeNumber),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              RouteBadge(routeNumber: summary.routeNumber),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '→ ${summary.headsign}',
+                  style: NaviType.body.copyWith(
+                    color: NaviColors.textPrimary(isDark),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: NaviColors.textSecondary(isDark),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _selectRouteByNumber(String number) {
+    for (final route in _routes) {
+      if (route.number == number) {
+        setState(() => _selectedSummaryNumber = number);
+        _selectRoute(route);
+        return;
+      }
+    }
+
+    // The GTFS bundle knows this route but the legacy Firestore/seed list does
+    // not. Still acknowledge the tap: highlight the row and clear the detail
+    // card so the sheet never looks unresponsive.
+    StageRouteSummary? summary;
+    for (final s in _routeSummaries) {
+      if (s.routeNumber == number) {
+        summary = s;
+        break;
+      }
+    }
+    setState(() {
+      _selectedSummaryNumber = number;
+      _selectedRoute = null;
+      _predictionResult = null;
+      _isLoadingPrediction = false;
+    });
+    if (summary != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Route ${summary.routeNumber} heads to ${summary.headsign}.',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Widget _buildLegacyChips() {
     if (_isLoadingRoutes) {
       return const Center(
         child: Padding(
@@ -300,7 +505,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
   }
 
   Widget _buildWaitTimeCard() {
-    if (_isLoadingPrediction) {
+    if (_isLoadingPrediction || _isLoadingSummaries) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(20),
@@ -310,8 +515,9 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
     }
 
     // Plain commuter language, never statistics. If the prediction is only a
-    // synthetic default (no real reports yet), admit it honestly instead of
-    // showing fabricated-looking precise numbers.
+    // synthetic default (no real reports yet), show the GTFS headway
+    // frequency instead — or the honest "not recorded yet" when the bundle
+    // has no headway data for this stage's time band.
     final prediction = _predictionResult;
     final hasRealReports = prediction != null &&
         ((prediction['reportCount'] as int?) ?? 0) > 0;
@@ -324,7 +530,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
       message =
           'Matatus arrive every ${lower.round()}–${upper.round()} min';
     } else {
-      message = 'Wait time data coming soon';
+      message = _frequencyText;
     }
 
     return Container(
@@ -559,7 +765,7 @@ class _StageDetailsSheetState extends State<StageDetailsSheet> {
                   padding: EdgeInsets.zero,
                   children: [
                     const SizedBox(height: 16),
-                    _buildRouteChips(),
+                    _buildRouteList(),
                     _buildWaitTimeCard(),
                     _buildRouteInfo(),
                     _buildActionButtons(),

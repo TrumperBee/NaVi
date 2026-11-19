@@ -6,8 +6,9 @@ allprojects {
         google()
         mavenCentral()
         // Mapbox Maven repository for native SDK downloads.
-        // Requires SDK_REGISTRY_TOKEN in ~/.gradle/gradle.properties:
-        //   SDK_REGISTRY_TOKEN=sk.YOUR_SECRET_MAPBOX_ACCESS_TOKEN
+        // Supply SDK_REGISTRY_TOKEN locally only — ~/.gradle/gradle.properties
+        // or the SDK_REGISTRY_TOKEN env var. Never commit a real value.
+        // See docs/BUILD_SETUP.md.
         maven {
             url = uri("https://api.mapbox.com/downloads/v2/releases/maven")
             authentication {
@@ -15,7 +16,9 @@ allprojects {
             }
             credentials {
                 username = "mapbox"
-                password = project.findProperty("SDK_REGISTRY_TOKEN") as String? ?: ""
+                password = project.findProperty("SDK_REGISTRY_TOKEN") as String?
+                    ?: System.getenv("SDK_REGISTRY_TOKEN")
+                    ?: ""
             }
         }
     }

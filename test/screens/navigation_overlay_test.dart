@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:navi_app/design/navi_colors.dart';
 import 'package:navi_app/models/active_journey.dart';
 import 'package:navi_app/models/route_segment.dart';
+import 'package:navi_app/models/transport_models.dart';
 import 'package:navi_app/screens/navigation_overlay.dart';
-import 'package:navi_app/widgets/journey_info_panel.dart';
+import 'package:navi_app/widgets/active_nav/active_nav_data.dart';
+import 'package:navi_app/widgets/active_nav/active_nav_panel.dart';
+import 'package:navi_app/widgets/active_nav/active_nav_theme.dart';
+import 'package:navi_app/widgets/active_nav/journey_timeline.dart';
+import 'package:navi_app/widgets/active_nav/nav_banner.dart';
+import 'package:navi_app/widgets/active_nav/nav_map_controls.dart';
+import 'package:navi_app/widgets/pre_trip_card.dart' show PreTripExtras;
 
 void main() {
   const origin = LatLng(-1.2833, 36.8167);
@@ -12,110 +20,469 @@ void main() {
   const alighting = LatLng(-1.2875, 36.8200);
   const destination = LatLng(-1.2890, 36.8220);
 
-  ActiveJourney walkRideWalk() {
-    return ActiveJourney(segments: [
-      RouteSegment.walk(
-        label: 'Walk to Stage A',
-        coordinates: [origin, boarding],
-        startPoint: origin,
-        endPoint: boarding,
-      ),
-      RouteSegment.matatu(
-        label: 'Ride Route 46 to Makadara',
-        coordinates: [boarding, alighting],
-        routeNumber: '46',
-        startPoint: boarding,
-        endPoint: alighting,
-      ),
-      RouteSegment.walk(
-        label: 'Walk to destination',
-        coordinates: [alighting, destination],
-        startPoint: alighting,
-        endPoint: destination,
-      ),
-    ]);
+  final stages = [
+    StageModel(
+      id: 'kariobangi',
+      name: 'Kariobangi',
+      lat: boarding.latitude,
+      lng: boarding.longitude,
+      corridor: 'Outer Ring',
+      routes: const ['46'],
+    ),
+    StageModel(
+      id: 'makadara',
+      name: 'Makadara',
+      lat: alighting.latitude,
+      lng: alighting.longitude,
+      corridor: 'Jogoo',
+      routes: const ['46'],
+    ),
+  ];
+
+  ActiveJourney walkRideWalk({int currentSegmentIndex = 0}) {
+    return ActiveJourney(
+      segments: [
+        RouteSegment.walk(
+          label: 'Walk to Kariobangi Stage',
+          coordinates: [origin, boarding],
+          startPoint: origin,
+          endPoint: boarding,
+        ),
+        RouteSegment.matatu(
+          label: 'Ride Route 46 to Makadara',
+          coordinates: [boarding, alighting],
+          routeNumber: '46',
+          fromStageId: 'kariobangi',
+          toStageId: 'makadara',
+          startPoint: boarding,
+          endPoint: alighting,
+        ),
+        RouteSegment.walk(
+          label: 'Walk to destination',
+          coordinates: [alighting, destination],
+          startPoint: alighting,
+          endPoint: destination,
+        ),
+      ],
+      currentSegmentIndex: currentSegmentIndex,
+    );
   }
 
-  Widget harness(double height) {
-    return MaterialApp(
+  Widget overlays({
+    ActiveJourney? journey,
+    String? proximityMessage,
+    VoidCallback? onDismissProximity,
+    VoidCallback? onEndTrip,
+    ValueChanged<bool>? onToggleVoiceGuidance,
+  }) {
+    return NavigationOverlay(
+      map: const ColoredBox(
+        key: Key('mapZone'),
+        color: Color(0xFFCCCCCC),
+      ),
+      journey: journey ?? walkRideWalk(),
+      stages: stages,
+      proximityMessage: proximityMessage,
+      onDismissProximity: onDismissProximity,
+      voiceGuidanceEnabled: true,
+      onToggleVoiceGuidance: onToggleVoiceGuidance ?? (_) {},
+      onEndTrip: onEndTrip ?? () {},
+      onZoomIn: () {},
+      onZoomOut: () {},
+      onResetBearing: () {},
+    );
+  }
+
+  Future<void> pumpOverlay(
+    WidgetTester tester, {
+    ActiveJourney? journey,
+    String? proximityMessage,
+    VoidCallback? onDismissProximity,
+    VoidCallback? onEndTrip,
+    ValueChanged<bool>? onToggleVoiceGuidance,
+    bool dark = false,
+    Size size = const Size(400, 700),
+    bool disableAnimations = true,
+  }) async {
+    await tester.binding.setSurfaceSize(size);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+      theme: dark ? ThemeData.dark() : ThemeData.light(),
       home: MediaQuery(
         data: MediaQueryData(
-          size: Size(400, height),
-          disableAnimations: true,
+          size: size,
+          disableAnimations: disableAnimations,
         ),
         child: Scaffold(
-          body: NavigationOverlay(
-            map: const ColoredBox(
-              key: Key('mapZone'),
-              color: Color(0xFFCCCCCC),
-            ),
-            journey: walkRideWalk(),
-            voiceGuidanceEnabled: true,
-            onToggleVoiceGuidance: (_) {},
-            onEndTrip: () {},
+          body: overlays(
+            journey: journey,
+            proximityMessage: proximityMessage,
+            onDismissProximity: onDismissProximity,
+            onEndTrip: onEndTrip,
+            onToggleVoiceGuidance: onToggleVoiceGuidance,
           ),
+        ),
+      ),
+    ));
+  }
+
+  Widget panel(
+    ActiveNavData data, {
+    required bool expanded,
+    bool dark = false,
+    VoidCallback? onEndTrip,
+  }) {
+    return MaterialApp(
+      theme: dark ? ThemeData.dark() : ThemeData.light(),
+      home: Scaffold(
+        body: ActiveNavPanel(
+          data: data,
+          scrollController: ScrollController(),
+          expanded: expanded,
+          onEndTrip: onEndTrip ?? () {},
         ),
       ),
     );
   }
 
-  group('mapZoneFlexFor', () {
-    test('small phones use a 52/48 split', () {
-      expect(NavigationOverlay.mapZoneFlexFor(599), equals((52, 48)));
+  group('map / panel split', () {
+    testWidgets('map keeps 55-60% of the screen above the collapsed panel',
+        (tester) async {
+      await pumpOverlay(tester);
+
+      final panel = tester.getRect(find.byKey(const Key('activeNavPanel')));
+      final visibleMap = panel.top;
+
+      expect(visibleMap / 700, inInclusiveRange(0.55, 0.62));
+      expect(visibleMap, greaterThanOrEqualTo(300),
+          reason: 'the map always keeps at least 300dp above the panel');
+      expect(find.byKey(const Key('mapZone')), findsOneWidget);
     });
 
-    test('medium screens use the 55/45 baseline', () {
-      expect(NavigationOverlay.mapZoneFlexFor(600), equals((55, 45)));
-      expect(NavigationOverlay.mapZoneFlexFor(700), equals((55, 45)));
-      expect(NavigationOverlay.mapZoneFlexFor(900), equals((55, 45)));
+    testWidgets('panel opens at ~42% and can grow to 80%', (tester) async {
+      expect(NavigationOverlay.initialExtentFor(const Size(400, 900)),
+          closeTo(0.42, 0.001));
+      expect(NavigationOverlay.maxExtent, 0.80);
+      expect(NavigationOverlay.minExtent, lessThan(0.42));
     });
 
-    test('large screens use a 57/43 split', () {
-      expect(NavigationOverlay.mapZoneFlexFor(901), equals((57, 43)));
+    testWidgets('360dp width lays out without overflow', (tester) async {
+      await pumpOverlay(tester, size: const Size(360, 640));
+
+      expect(tester.takeException(), isNull);
+      final banner = tester.getRect(find.byType(NavInstructionBanner));
+      expect(banner.width, 360 - 32, reason: '16dp side margins');
+
+      // The collapsed sheet shows the current step and the next two without
+      // clipping: every timeline row sits above the fixed action row.
+      final panel = tester.getRect(find.byKey(const Key('activeNavPanel')));
+      expect(panel.top / 640, greaterThanOrEqualTo(0.55 - 0.01));
+      final rows = find.byType(NavTimelineRow);
+      expect(rows, findsNWidgets(3));
+      final endButton =
+          tester.getRect(find.widgetWithText(FilledButton, 'End Journey'));
+      expect(
+          tester.getRect(rows.last).bottom, lessThanOrEqualTo(endButton.top));
     });
   });
 
-  group('NavigationOverlay layout', () {
-    testWidgets('map sits in the top zone, info panel in the bottom zone',
+  group('map controls', () {
+    testWidgets('float 16dp from the right edge, just above the panel',
         (tester) async {
-      const height = 700.0;
-      await tester.pumpWidget(harness(height));
+      await pumpOverlay(tester);
 
-      expect(find.byType(JourneyInfoPanel), findsOneWidget);
-      expect(find.byKey(const Key('mapZone')), findsOneWidget);
-
-      final mapZone = tester.getSize(find.byKey(const Key('mapZone')));
-      final infoZone = tester.getSize(find.byType(JourneyInfoPanel));
-
-      // The flex split is proportional: with a medium height (MediaQuery 700)
-      // the 55/45 baseline applies. The real test canvas is 800x600, so assert
-      // against the column's own total rather than a fabricated figure.
-      final total = mapZone.height + infoZone.height;
-      expect(mapZone.height / total, closeTo(0.55, 0.02),
-          reason: 'map must own the visible majority (~55%)');
-      expect(infoZone.height / total, closeTo(0.45, 0.02),
-          reason: 'info panel must be a distinct ~45% bottom zone');
-      expect(mapZone.height + infoZone.height, closeTo(600.0, 0.1));
+      final rail = tester.getRect(find.byType(NavMapControls));
+      final panel = tester.getRect(find.byKey(const Key('activeNavPanel')));
+      expect(rail.right, 400 - 16);
+      expect(rail.bottom, closeTo(panel.top - 16, 0.5));
+      expect(
+          rail.top,
+          greaterThan(tester
+              .getRect(
+                find.byType(NavInstructionBanner),
+              )
+              .bottom));
     });
 
-    testWidgets('maneuver banner floats over the map with the current step',
-        (tester) async {
-      await tester.pumpWidget(harness(700));
+    testWidgets('voice button reports the flipped value', (tester) async {
+      bool? value;
+      await pumpOverlay(tester, onToggleVoiceGuidance: (v) => value = v);
 
-      expect(find.byType(ManeuverBanner), findsOneWidget);
-      expect(find.text('WALKING'), findsOneWidget);
-      expect(find.text('Walk to Stage A'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.volume_up));
+      expect(value, isFalse);
+    });
+  });
+
+  group('instruction banner', () {
+    testWidgets('walking leg without steps shows the walk instruction',
+        (tester) async {
+      await pumpOverlay(tester);
+
+      final banner = find.byType(NavInstructionBanner);
+      expect(
+        find.descendant(
+          of: banner,
+          matching: find.text('Walk to Kariobangi Stage'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.getSize(banner).height, ActiveNavTheme.bannerHeight);
     });
 
-    testWidgets('info panel exposes the required journey content',
+    testWidgets('matatu leg shows the route and alighting stage',
         (tester) async {
-      await tester.pumpWidget(harness(700));
+      await pumpOverlay(tester, journey: walkRideWalk(currentSegmentIndex: 1));
 
-      expect(find.text('FINAL TIME'), findsOneWidget);
-      expect(find.text('Walking to Stage A'), findsOneWidget);
-      expect(find.text('UP NEXT'), findsOneWidget);
-      expect(find.text('Ride Route 46 to Makadara'), findsOneWidget);
-      expect(find.text('End Trip'), findsOneWidget);
+      final banner = find.byType(NavInstructionBanner);
+      expect(
+        find.descendant(of: banner, matching: find.text('Stay on Route 46')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: banner, matching: find.text('Get off at Makadara')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+            of: banner, matching: find.text('Ride Route 46 to Makadara')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('after alighting the banner walks to the destination',
+        (tester) async {
+      await pumpOverlay(tester, journey: walkRideWalk(currentSegmentIndex: 2));
+
+      final banner = find.byType(NavInstructionBanner);
+      expect(
+        find.descendant(
+            of: banner, matching: find.text('Walk to your destination')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('banner transition is 250ms unless animations are disabled',
+        (tester) async {
+      await pumpOverlay(tester, disableAnimations: false);
+      final switcher =
+          tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
+      expect(switcher.duration, const Duration(milliseconds: 250));
+
+      await pumpOverlay(tester);
+      final reduced =
+          tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
+      expect(reduced.duration, Duration.zero);
+    });
+  });
+
+  group('coordinate safety', () {
+    testWidgets('a coordinate-fallback destination never renders raw',
+        (tester) async {
+      final journey = ActiveJourney(segments: [
+        RouteSegment.walk(
+          label: 'Walk to -1.285000, 36.818300',
+          coordinates: [origin, destination],
+          startPoint: origin,
+          endPoint: destination,
+        ),
+      ]);
+      await pumpOverlay(tester, journey: journey);
+
+      expect(find.text('Walk to -1.285000, 36.818300'), findsNothing);
+      expect(find.textContaining('-1.285000'), findsNothing);
+      expect(find.text('Walk to your destination'), findsWidgets);
+    });
+  });
+
+  group('proximity strip', () {
+    testWidgets('amber strip docks under the banner, clear of the map centre',
+        (tester) async {
+      await pumpOverlay(tester,
+          proximityMessage: 'Approaching Makadara - 100 m');
+
+      final banner = tester.getRect(find.byType(NavInstructionBanner));
+      final strip = tester.getRect(find.byType(NavProximityBanner));
+      final panel = tester.getRect(find.byKey(const Key('activeNavPanel')));
+
+      expect(find.text('Approaching Makadara - 100 m'), findsOneWidget);
+      expect(strip.top, greaterThanOrEqualTo(banner.bottom));
+      expect(strip.bottom, lessThan(700 / 2),
+          reason: 'the strip never reaches the map centre');
+      expect(strip.bottom, lessThanOrEqualTo(panel.top));
+    });
+
+    testWidgets('dismiss button fires the owner callback', (tester) async {
+      var dismissed = false;
+      await pumpOverlay(tester,
+          proximityMessage: 'Approaching Makadara - 50 m',
+          onDismissProximity: () => dismissed = true);
+
+      await tester.tap(find.byIcon(Icons.close));
+      expect(dismissed, isTrue);
+    });
+
+    testWidgets('hidden when there is no active alert', (tester) async {
+      await pumpOverlay(tester);
+      expect(find.byType(NavProximityBanner), findsNothing);
+    });
+  });
+
+  group('timeline states', () {
+    test('current, completed and upcoming are derived from the live index', () {
+      final data = ActiveNavData(
+        journey: walkRideWalk(currentSegmentIndex: 1),
+        stages: stages,
+        now: DateTime(2025, 1, 1, 10, 0),
+      );
+
+      final steps = data.timeline;
+      expect(steps.map((s) => s.state).toList(), [
+        NavStepState.completed, // walk to the stage is behind the traveller
+        NavStepState.current, // boarding the matatu
+        NavStepState.upcoming, // the ride ends later
+        NavStepState.upcoming, // final walk
+      ]);
+      expect(steps[0].title, 'Walk to Kariobangi Stage');
+      expect(steps[1].title, 'Route 46');
+      expect(steps[3].title, 'Walk to your destination');
+    });
+
+    test('when the journey is complete every step is completed', () {
+      final data = ActiveNavData(
+        journey: walkRideWalk(currentSegmentIndex: 3),
+        stages: stages,
+      );
+      expect(data.timeline.every((s) => s.state == NavStepState.completed),
+          isTrue);
+    });
+
+    testWidgets('collapsed sheet shows the current step and the next two',
+        (tester) async {
+      final data = ActiveNavData(
+        journey: walkRideWalk(currentSegmentIndex: 1),
+        stages: stages,
+        now: DateTime(2025, 1, 1, 10, 0),
+      );
+
+      await tester.pumpWidget(panel(data, expanded: false));
+
+      final rows =
+          tester.widgetList<NavTimelineRow>(find.byType(NavTimelineRow));
+      expect(rows.length, 3);
+      expect(rows.map((r) => r.step.state), [
+        NavStepState.current,
+        NavStepState.upcoming,
+        NavStepState.upcoming,
+      ]);
+      expect(find.text('Now'), findsOneWidget);
+      expect(find.text('Walk to Kariobangi Stage'), findsNothing,
+          reason: 'completed steps only appear once the sheet is expanded');
+    });
+
+    testWidgets('expanded sheet reveals completed steps and the check mark',
+        (tester) async {
+      final data = ActiveNavData(
+        journey: walkRideWalk(currentSegmentIndex: 1),
+        stages: stages,
+      );
+
+      await tester.pumpWidget(panel(data, expanded: true));
+
+      final rows = tester
+          .widgetList<NavTimelineRow>(find.byType(NavTimelineRow))
+          .toList();
+      expect(rows.first.step.state, NavStepState.completed);
+      expect(find.text('Walk to Kariobangi Stage'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(NavTimelineRow),
+          matching: find.byIcon(Icons.check),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('upcoming copy stays at full contrast', (tester) async {
+      final data = ActiveNavData(
+        journey: walkRideWalk(currentSegmentIndex: 1),
+        stages: stages,
+      );
+
+      await tester.pumpWidget(panel(data, expanded: false));
+
+      final upcoming = tester
+          .widgetList<NavTimelineRow>(find.byType(NavTimelineRow))
+          .firstWhere((r) => r.step.state == NavStepState.upcoming);
+      final text = tester.widget<Text>(find.descendant(
+        of: find.byWidget(upcoming),
+        matching: find.text(upcoming.step.title),
+      ));
+      expect(text.style?.color, NaviColors.textSecondaryLight);
+      expect(text.style!.color!.a, 1.0);
+    });
+
+    testWidgets('expanded ride reveals the stop count and its stop names',
+        (tester) async {
+      final data = ActiveNavData(
+        journey: walkRideWalk(currentSegmentIndex: 1),
+        stages: stages,
+        extras: const PreTripExtras(
+          stopCounts: {1: 2},
+          stopNames: {
+            1: ['Kariobangi', 'Makadara'],
+          },
+        ),
+      );
+
+      await tester.pumpWidget(panel(data, expanded: true));
+      expect(find.text('2 stops'), findsOneWidget);
+
+      await tester.tap(find.text('2 stops'));
+      await tester.pumpAndSettle();
+      expect(find.text('Kariobangi · Makadara'), findsOneWidget);
+    });
+  });
+
+  group('actions', () {
+    testWidgets('End Journey asks for confirmation first', (tester) async {
+      var ended = false;
+      await pumpOverlay(tester, onEndTrip: () => ended = true);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'End Journey'));
+      await tester.pumpAndSettle();
+      expect(find.text('End this journey?'), findsOneWidget);
+      expect(ended, isFalse);
+
+      await tester.tap(find.widgetWithText(TextButton, 'Keep going'));
+      await tester.pumpAndSettle();
+      expect(ended, isFalse);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'End Journey'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.widgetWithText(FilledButton, 'End Journey'),
+      ));
+      await tester.pumpAndSettle();
+      expect(ended, isTrue);
+    });
+
+    testWidgets('dark mode keeps the banner ink and uses dark surfaces',
+        (tester) async {
+      await pumpOverlay(tester, dark: true);
+
+      final bannerBox = tester.widget<DecoratedBox>(find
+          .descendant(
+            of: find.byType(NavInstructionBanner),
+            matching: find.byType(DecoratedBox),
+          )
+          .first);
+      expect((bannerBox.decoration as BoxDecoration).color,
+          const Color(0xFF12161C));
+
+      final panel =
+          tester.widget<Material>(find.byKey(const Key('activeNavPanel')));
+      expect(panel.color, NaviColors.surfaceDark);
     });
   });
 }

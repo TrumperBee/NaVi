@@ -54,22 +54,18 @@ class _SearchOverlayState extends State<SearchOverlay> {
     return Consumer<SearchViewModel>(
       builder: (context, viewModel, child) {
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        return Positioned(
-          top: 120,
-          left: 16,
-          right: 16,
+        // NOTE: no Positioned here — this widget must be a direct child of the
+        // caller's Stack (or wrapped by it). Returning a ParentDataWidget from
+        // inside another widget breaks Stack layout and takes the whole screen
+        // down with a white screen. Sizing/positioning belongs to the caller.
+        return Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
           child: Container(
-            height: MediaQuery.of(context).size.height * 0.6,
             decoration: BoxDecoration(
               color: NaviColors.surface(isDark),
               borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 10,
-                  spreadRadius: 2,
-                ),
-              ],
             ),
             child: Column(
               children: [

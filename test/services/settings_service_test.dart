@@ -260,6 +260,84 @@ void main() {
         expect(home!.label, 'Nairobi CBD');
         expect(home.lat, closeTo(-1.29, 0.0001));
       });
+
+      test('displaySubtitle uses the most specific reverse-geocode part', () {
+        expect(
+          const SavedPlace(
+                  lat: -1.274, lng: 36.808, label: 'Chiromo Road, Nairobi, Kenya')
+              .displaySubtitle(title: 'Home'),
+          'Chiromo Road',
+        );
+        expect(
+          const SavedPlace(lat: -1.274, lng: 36.808, label: 'Kasarani')
+              .displaySubtitle(title: 'Campus'),
+          'Kasarani',
+        );
+        // A full place_name stored by the search picker reduces the same way.
+        expect(
+          const SavedPlace(
+                  lat: -1.274, lng: 36.808, label: 'The Hub, Karen, Nairobi')
+              .displaySubtitle(title: 'Home'),
+          'The Hub',
+        );
+      });
+
+      test(
+          'displaySubtitle falls back to 3-decimal coordinates when the '
+          'geocode is city-only, failed, or repeats the slot title', () {
+        // Bare city — every Nairobi save would read identically.
+        expect(
+          const SavedPlace(lat: -1.274, lng: 36.808, label: 'Nairobi')
+              .displaySubtitle(title: 'Home'),
+          '-1.274, 36.808',
+        );
+        expect(
+          const SavedPlace(lat: -1.274, lng: 36.808, label: 'Nairobi, Kenya')
+              .displaySubtitle(title: 'Home'),
+          '-1.274, 36.808',
+        );
+        expect(
+          const SavedPlace(
+                  lat: -1.274, lng: 36.808, label: 'Nairobi, Nairobi County, Kenya')
+              .displaySubtitle(title: 'Home'),
+          '-1.274, 36.808',
+        );
+        // Reverse geocode failed outright.
+        expect(
+          const SavedPlace(lat: -1.274, lng: 36.808, label: '')
+              .displaySubtitle(title: 'Home'),
+          '-1.274, 36.808',
+        );
+        // Legacy saves stored the slot name itself as the label.
+        expect(
+          const SavedPlace(lat: -1.274, lng: 36.808, label: 'Home')
+              .displaySubtitle(title: 'Home'),
+          '-1.274, 36.808',
+        );
+        // An already-coordinate label is kept verbatim.
+        expect(
+          const SavedPlace(lat: -1.274, lng: 36.808, label: '-1.274, 36.808')
+              .displaySubtitle(title: 'Home'),
+          '-1.274, 36.808',
+        );
+      });
+
+      test('clearSavedPlace empties the slot and persists the removal',
+          () async {
+        final service = SettingsService();
+        await service.load();
+        service.setSavedPlace(
+            SavedPlaceKind.campus,
+            const SavedPlace(lat: -1.286, lng: 36.817, label: 'Kasarani'));
+        expect(service.savedPlace(SavedPlaceKind.campus), isNotNull);
+
+        service.clearSavedPlace(SavedPlaceKind.campus);
+        expect(service.savedPlace(SavedPlaceKind.campus), isNull);
+
+        final fresh = SettingsService();
+        await fresh.load();
+        expect(fresh.savedPlace(SavedPlaceKind.campus), isNull);
+      });
     });
   });
 }

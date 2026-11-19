@@ -8,27 +8,50 @@ import 'package:navi_app/services/settings_service.dart';
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  Future<void> _launchURL(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+  /// Contact/report actions. The developer WhatsApp number.
+  static const String _supportPhone = '254713079528';
+
+  /// Opens [url] in the matching external app.
+  ///
+  /// Deliberately does NOT gate on `canLaunchUrl`: on Android 15 that check
+  /// returns false for valid https/mailto/wa.me links because package
+  /// visibility is scoped, which made every button on this screen a silent
+  /// no-op. Attempt the launch and surface a real error only on failure.
+  Future<void> _openExternal(BuildContext context, String url) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Could not open $url')),
+        );
+      }
+    } catch (_) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not open $url')),
+      );
     }
   }
 
-  Future<void> _launchEmail(String email) async {
-    final uri = Uri.parse('mailto:$email');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
-  }
+  Future<void> _launchEmail(BuildContext context, String email) =>
+      _openExternal(context, 'mailto:$email');
 
-  Future<void> _launchWhatsApp(String phone) async {
-    final url = 'https://wa.me/$phone';
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
-  }
+  Future<void> _launchWhatsApp(BuildContext context, String phone) =>
+      _openExternal(context, 'https://wa.me/$phone');
+
+  Future<void> _launchURL(BuildContext context, String url) =>
+      _openExternal(context, url);
+
+  /// Report/suggestion tiles hand off to the support WhatsApp chat with a
+  /// prefilled opener, so they do something real instead of "coming soon".
+  Future<void> _sendSupportMessage(BuildContext context, String message) =>
+      _openExternal(
+        context,
+        'https://wa.me/$_supportPhone?text=${Uri.encodeComponent(message)}',
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -152,11 +175,10 @@ class ProfileScreen extends StatelessWidget {
                     title: const Text('Report Route Issue'),
                     subtitle: const Text('Incorrect route information'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Report feature coming soon!')),
-                      );
-                    },
+                    onTap: () => _sendSupportMessage(
+                      context,
+                      'Hi NaVi, I want to report a route issue: ',
+                    ),
                   ),
                   const Divider(height: 0),
                   ListTile(
@@ -171,11 +193,10 @@ class ProfileScreen extends StatelessWidget {
                     title: const Text('Report Fare Issue'),
                     subtitle: const Text('Incorrect fare information'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Report feature coming soon!')),
-                      );
-                    },
+                    onTap: () => _sendSupportMessage(
+                      context,
+                      'Hi NaVi, I want to report a fare issue: ',
+                    ),
                   ),
                   const Divider(height: 0),
                   ListTile(
@@ -190,11 +211,10 @@ class ProfileScreen extends StatelessWidget {
                     title: const Text('Suggest New Stage'),
                     subtitle: const Text('Help us expand our coverage'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Suggestion feature coming soon!')),
-                      );
-                    },
+                    onTap: () => _sendSupportMessage(
+                      context,
+                      'Hi NaVi, I want to suggest a new stage: ',
+                    ),
                   ),
                 ],
               ),
@@ -223,19 +243,21 @@ class ProfileScreen extends StatelessWidget {
                       icon: Icons.email,
                       color: Colors.red,
                       label: 'ochiengv250@gmail.com',
-                      onTap: () => _launchEmail('ochiengv250@gmail.com'),
+                      onTap: () =>
+                          _launchEmail(context, 'ochiengv250@gmail.com'),
                     ),
                     _buildContactTile(
                       icon: Icons.message,
                       color: Colors.green,
                       label: '+254 713 079 528',
-                      onTap: () => _launchWhatsApp('254713079528'),
+                      onTap: () => _launchWhatsApp(context, _supportPhone),
                     ),
                     _buildContactTile(
                       icon: Icons.camera_alt,
                       color: Colors.purple,
                       label: '@404._victor',
-                      onTap: () => _launchURL('https://instagram.com/404._victor'),
+                      onTap: () => _launchURL(
+                          context, 'https://instagram.com/404._victor'),
                     ),
                   ],
                 ),

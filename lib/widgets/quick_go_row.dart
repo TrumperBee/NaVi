@@ -4,6 +4,7 @@ import '../design/navi_colors.dart';
 import '../design/navi_spacing.dart';
 import '../design/navi_typography.dart';
 import '../features/journey/models/journey_models.dart';
+import '../services/settings_service.dart';
 
 /// Horizontally scrollable Home / Work / Campus quick-go chips.
 ///
@@ -13,7 +14,15 @@ import '../features/journey/models/journey_models.dart';
 /// destinations degrade into a muted "Add …" chip that keeps the existing
 /// set-destination flow reachable.
 ///
-/// The row is 44dp tall: the visual chip is 32dp but the ink/tap target spans
+/// Each set chip is a two-line pill: the slot name ("Home" / "Work" /
+/// "Campus") as the title with its icon, and a specific address line
+/// underneath — the street/neighbourhood from the reverse geocode, or the
+/// coordinates when nothing specific was found
+/// ([SavedPlace.displaySubtitle]) — so two places saved at different spots
+/// can never read the same. Tapping a set chip starts routing to it;
+/// long-press opens the edit/clear dialog.
+///
+/// The row is 56dp tall: the visual chip is 48dp but the ink/tap target spans
 /// the full row height so every chip meets the 44x44 minimum touch target.
 class QuickGoRow extends StatelessWidget {
   final List<SavedDestination> destinations;
@@ -35,9 +44,24 @@ class QuickGoRow extends StatelessWidget {
     this.onAddCampus,
   });
 
-  static const double rowHeight = 44;
-  static const double _chipHeight = 32;
+  static const double rowHeight = 56;
+  static const double _chipHeight = 48;
   static const double _hitPadding = (rowHeight - _chipHeight) / 2;
+
+  /// The slot name a pill titles itself with — always the slot, never the
+  /// geocoded address, so pills stay distinguishable at a glance.
+  static String titleFor(SavedDestinationType type) {
+    switch (type) {
+      case SavedDestinationType.home:
+        return 'Home';
+      case SavedDestinationType.work:
+        return 'Work';
+      case SavedDestinationType.campus:
+        return 'Campus';
+      case SavedDestinationType.frequent:
+        return 'Location';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,11 +78,18 @@ class QuickGoRow extends StatelessWidget {
           final item = items[index];
           final destination = item.$1;
           if (destination != null) {
+            final title = titleFor(destination.type);
+            final subtitle = SavedPlace(
+              lat: destination.latitude,
+              lng: destination.longitude,
+              label: destination.label,
+            ).displaySubtitle(title: title);
             return Align(
               alignment: Alignment.centerLeft,
               child: _QuickGoChip(
                 icon: _iconFor(destination.type),
-                label: destination.label,
+                title: title,
+                subtitle: subtitle,
                 onTap: () => onTap(destination),
                 onLongPress: onEdit == null
                     ? null
@@ -71,7 +102,7 @@ class QuickGoRow extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: _QuickGoChip(
               icon: add.icon,
-              label: add.label,
+              title: add.label,
               muted: true,
               onTap: add.onTap,
             ),
@@ -138,15 +169,22 @@ class _AddItem {
 
 class _QuickGoChip extends StatelessWidget {
   final IconData icon;
-  final String label;
+
+  /// Slot name shown as the pill's first line ("Home" / "Work" / "Campus"),
+  /// or the full label for muted "Add …" chips.
+  final String title;
+
+  /// Address line under the title; null renders a single-line chip.
+  final String? subtitle;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final bool muted;
 
   const _QuickGoChip({
     required this.icon,
-    required this.label,
+    required this.title,
     required this.onTap,
+    this.subtitle,
     this.onLongPress,
     this.muted = false,
   });
@@ -154,6 +192,12 @@ class _QuickGoChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleStyle = NaviType.caption.copyWith(
+      color: muted
+          ? NaviColors.textSecondary(isDark)
+          : NaviColors.textPrimary(isDark),
+      fontWeight: FontWeight.w600,
+    );
     final chip = Container(
       height: QuickGoRow._chipHeight,
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -168,22 +212,39 @@ class _QuickGoChip extends StatelessWidget {
         children: [
           Icon(icon, size: 16, color: NaviColors.transitGreen),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: NaviType.caption.copyWith(
-              color: muted
-                  ? NaviColors.textSecondary(isDark)
-                  : NaviColors.textPrimary(isDark),
-              fontWeight: FontWeight.w600,
+          if (subtitle == null)
+            Text(title, style: titleStyle)
+          else
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: titleStyle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  subtitle!,
+                  key: const ValueKey('quickGoSubtitle'),
+                  style: NaviType.caption.copyWith(
+                    color: NaviColors.textSecondary(isDark),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
-          ),
         ],
       ),
     );
 
     return Semantics(
       button: true,
-      label: label,
+      label: subtitle == null ? title : '$title, $subtitle',
       child: SizedBox(
         height: QuickGoRow.rowHeight,
         child: Material(
@@ -193,7 +254,7 @@ class _QuickGoChip extends StatelessWidget {
             onLongPress: onLongPress,
             borderRadius: BorderRadius.circular(QuickGoRow._chipHeight / 2),
             child: Padding(
-              // Hit area = 32 visual + 12dp of vertical padding = 44dp.
+              // Hit area = 48 visual + 8dp of vertical padding = 56dp.
               padding: const EdgeInsets.symmetric(vertical: QuickGoRow._hitPadding),
               child: chip,
             ),

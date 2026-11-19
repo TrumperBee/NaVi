@@ -39,10 +39,10 @@ class PolylineRendererService {
 
   Future<void> initialize() async {}
 
-  Future<void> renderJourney(ActiveJourney journey, {bool preview = false}) async {
-    final options = preview
-        ? buildPreviewOptions(journey)
-        : buildLiveOptions(journey);
+  Future<void> renderJourney(ActiveJourney journey,
+      {bool preview = false}) async {
+    final options =
+        preview ? buildPreviewOptions(journey) : buildLiveOptions(journey);
     await _mapManager.setPolylineAnnotations(options);
   }
 
@@ -96,6 +96,7 @@ class PolylineRendererService {
     options.addAll(_optionsForRuns(
       stitchRuns(remainingRuns),
       remainingOpacity: 0.95,
+      live: true,
     ));
 
     return options;
@@ -103,27 +104,38 @@ class PolylineRendererService {
 
   /// Converts a list of stitched runs into concrete annotations: solid blue
   /// for matatu legs, dashed green for walk legs. All annotations use rounded
-  /// caps/joins so neighbouring legs blend into one continuous line.
+  /// joins so neighbouring legs blend into one continuous line.
+  ///
+  /// [live] widens the remaining-route stroke to the navigation spec (8dp blue
+  /// with a 2dp white casing) so it reads clearly over satellite imagery; the
+  /// preview keeps the lighter 6dp stroke it was designed with.
   static List<PolylineAnnotationOptions> _optionsForRuns(
     List<PolylineSegmentRun> runs, {
     required double remainingOpacity,
+    bool live = false,
   }) {
     final options = <PolylineAnnotationOptions>[];
+    final rideWidth = live ? 8.0 : 6.0;
+    final rideCasing = live ? 2.0 : 1.5;
     for (final run in runs) {
       if (run.coords.length < 2) continue;
       if (run.mode == SegmentMode.matatu) {
         options.add(PolylineAnnotationOptions(
           lineColor: _rideColor.toARGB32(),
-          lineWidth: 6.0,
+          lineWidth: rideWidth,
           lineOpacity: remainingOpacity,
-lineBorderColor: Colors.white.toARGB32(),
-        lineBorderWidth: 1.5,
-        lineJoin: LineJoin.ROUND,
-        geometry: _toLineString(run.coords),
-      ));
+          lineBorderColor: Colors.white.toARGB32(),
+          lineBorderWidth: rideCasing,
+          lineJoin: LineJoin.ROUND,
+          geometry: _toLineString(run.coords),
+        ));
       } else {
-        options.addAll(
-            _dashedWalk(run.coords, opacity: remainingOpacity));
+        options.addAll(_dashedWalk(
+          run.coords,
+          opacity: remainingOpacity,
+          dashWidth: live ? 6.0 : 4.5,
+          dashCasing: live ? 1.5 : 1.0,
+        ));
       }
     }
     return options;
@@ -132,7 +144,8 @@ lineBorderColor: Colors.white.toARGB32(),
   /// Converts a list of segments into a list of same-mode runs (first pass;
   /// consecutive same-mode segments remain separate runs to be merged by
   /// [stitchRuns]).
-  static List<PolylineSegmentRun> runsFromSegments(List<RouteSegment> segments) {
+  static List<PolylineSegmentRun> runsFromSegments(
+      List<RouteSegment> segments) {
     return [
       for (final segment in segments)
         if (segment.coordinates.isNotEmpty)
@@ -156,8 +169,10 @@ lineBorderColor: Colors.white.toARGB32(),
           // Same mode: merge coordinates, dropping the duplicated junction
           // point so the polyline is truly continuous.
           final merged = List<LatLng>.of(last.coords);
-          merged.addAll(run.coords.first == anchor ? run.coords.skip(1) : run.coords);
-          result[result.length - 1] = PolylineSegmentRun(mode: run.mode, coords: merged);
+          merged.addAll(
+              run.coords.first == anchor ? run.coords.skip(1) : run.coords);
+          result[result.length - 1] =
+              PolylineSegmentRun(mode: run.mode, coords: merged);
         } else {
           // Mode change: snap the new run's start onto the previous end.
           result.add(PolylineSegmentRun(
@@ -183,6 +198,8 @@ lineBorderColor: Colors.white.toARGB32(),
     double opacity = 0.95,
     double dashMeters = 18,
     double gapMeters = 9,
+    double dashWidth = 4.5,
+    double dashCasing = 1.0,
   }) {
     if (coords.length < 2) return [];
     final pts = List<LatLng>.from(coords);
@@ -215,10 +232,10 @@ lineBorderColor: Colors.white.toARGB32(),
       if (dashEnd - cursor > 1.0) {
         dashes.add(PolylineAnnotationOptions(
           lineColor: _walkColor.toARGB32(),
-          lineWidth: 4.5,
+          lineWidth: dashWidth,
           lineOpacity: opacity,
           lineBorderColor: Colors.white.toARGB32(),
-          lineBorderWidth: 1.0,
+          lineBorderWidth: dashCasing,
           lineJoin: LineJoin.ROUND,
           geometry: _toLineString([pointAt(cursor), pointAt(dashEnd)]),
         ));
@@ -240,13 +257,14 @@ lineBorderColor: Colors.white.toARGB32(),
     final dLat = (b.latitude - a.latitude) * pi / 180;
     final dLng = (b.longitude - a.longitude) * pi / 180;
     final h = sin(dLat / 2) * sin(dLat / 2) +
-        cos(a.latitude * pi / 180) * cos(b.latitude * pi / 180) *
-            sin(dLng / 2) * sin(dLng / 2);
+        cos(a.latitude * pi / 180) *
+            cos(b.latitude * pi / 180) *
+            sin(dLng / 2) *
+            sin(dLng / 2);
     return 2 * atan2(sqrt(h), sqrt(1 - h)) * R;
   }
 
-  static LineString _toLineString(List<LatLng> points) =>
-      LineString.fromJson({
+  static LineString _toLineString(List<LatLng> points) => LineString.fromJson({
         'type': 'LineString',
         'coordinates': points.map((p) => [p.longitude, p.latitude]).toList(),
       });

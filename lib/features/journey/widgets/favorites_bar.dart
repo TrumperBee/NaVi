@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:navi_app/features/journey/models/journey_models.dart';
+import 'package:navi_app/services/settings_service.dart';
 
 class FavoritesBar extends StatelessWidget {
   final List<SavedDestination> destinations;
@@ -149,6 +150,17 @@ class _FavoriteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Title = slot name ("Home" / "Work" / "Campus"); the line under it is
+    // the specific street/neighbourhood address, or coordinates when the
+    // reverse geocode had nothing specific to show — never a bare city, so
+    // two saved places always read as two different cards.
+    final title = _title;
+    final subtitle = SavedPlace(
+      lat: dest.latitude,
+      lng: dest.longitude,
+      label: dest.label,
+    ).displaySubtitle(title: title);
+
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -180,10 +192,21 @@ class _FavoriteCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              dest.label,
+              title,
               style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[600],
               ),
               textAlign: TextAlign.center,
               maxLines: 1,
@@ -193,6 +216,19 @@ class _FavoriteCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String get _title {
+    switch (dest.type) {
+      case SavedDestinationType.home:
+        return 'Home';
+      case SavedDestinationType.campus:
+        return 'Campus';
+      case SavedDestinationType.work:
+        return 'Work';
+      case SavedDestinationType.frequent:
+        return 'Location';
+    }
   }
 
   IconData get _icon {

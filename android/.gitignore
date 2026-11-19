@@ -8,6 +8,7 @@ GeneratedPluginRegistrant.java
 .cxx/
 
 # Remember to never publicly share your keystore.
+# key.properties also carries the local-only Mapbox token (see docs/BUILD_SETUP.md).
 # See https://flutter.dev/to/reference-keystore
 key.properties
 **/*.keystore
