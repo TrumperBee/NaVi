@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:navi_app/data/nairobi_corridors_seed.dart';
 import 'package:navi_app/data/nairobi_stages_seed.dart';
@@ -7,11 +8,22 @@ import 'package:navi_app/models/route_segment.dart';
 import 'package:navi_app/models/search_result.dart';
 import 'package:navi_app/services/fare_calculator_service.dart';
 import 'package:navi_app/services/stage_registry.dart';
+import 'package:navi_app/services/walking_directions_service.dart';
 
 class RouteBuilderService {
   static const double kMatatuAvgSpeedKmh = 20.0;
   static const double kWalkSpeedMs = 1.4;
   static const double kTransferWalkThresholdMeters = 800.0;
+
+  /// Road-following walking geometry for every walk leg. Overridable so tests
+  /// can drive the builder offline.
+  static WalkingDirectionsService walkingDirections =
+      WalkingDirectionsService();
+
+  @visibleForTesting
+  static void overrideWalkingDirections(WalkingDirectionsService service) {
+    walkingDirections = service;
+  }
 
   /// Direct (crow-flies) distance under which "Prefer walking paths" forces a
   /// walk-only route instead of staging a matatu trip. 1.5 km is a ten-minute
@@ -119,7 +131,7 @@ class RouteBuilderService {
         boardingStage.corridorId != alightingCorridor.id &&
         kBusyCorridorIds.contains(boardingStage.corridorId) &&
         !kBusyCorridorIds.contains(alightingCorridor.id)) {
-      final bypass = _buildBusyCorridorBypass(
+      final bypass = await _buildBusyCorridorBypass(
         origin,
         destinationCoord,
         destination.resolvedLabel,
@@ -133,7 +145,7 @@ class RouteBuilderService {
 
     // Segment 1: Walk from origin to boarding stage (skipped when already there).
     final walkToStage =
-        _walkSegment('Walk to ${boardingStage.name}', origin, boardingCoord);
+        await _walkSegment('Walk to ${boardingStage.name}', origin, boardingCoord);
     if (walkToStage.distanceMeters >= 1.0) segments.add(walkToStage);
 
     // Segment 2: Matatu ride along corridor(s).
@@ -153,7 +165,7 @@ class RouteBuilderService {
         ));
       }
     } else {
-      segments.addAll(_buildMultiCorridorRoute(
+      segments.addAll(await _buildMultiCorridorRoute(
         boardingStage,
         alightingStage,
         boardingCorridor,
@@ -163,7 +175,7 @@ class RouteBuilderService {
 
     // Segment 3: Walk from alighting stage to destination (skipped when the
     // destination sits exactly on the stage).
-    final walkFromStage = _walkSegment(
+    final walkFromStage = await _walkSegment(
         'Walk to ${destination.resolvedLabel}', alightingCoord, destinationCoord);
     if (walkFromStage.distanceMeters >= 1.0) segments.add(walkFromStage);
 
@@ -178,11 +190,11 @@ class RouteBuilderService {
 
   /// Walk-only route used whenever origin and destination resolve to the same
   /// stage, or no rideable leg exists.
-  static ActiveJourney _walkOnlyRoute(
-      LatLng origin, LatLng destination, String destLabel) {
+  static Future<ActiveJourney> _walkOnlyRoute(
+      LatLng origin, LatLng destination, String destLabel) async {
     return ActiveJourney(
       segments: [
-        _walkSegment('Walk to $destLabel', origin, destination),
+        await _walkSegment('Walk to $destLabel', origin, destination),
       ],
     );
   }
@@ -190,19 +202,19 @@ class RouteBuilderService {
   /// Ride straight between an origin stage and an alighting stage when at least
   /// one of them has no assigned corridor (GTFS-only stop with no polyline to
   /// slice). Uses the direct great-circle line between the two stage coords.
-  static ActiveJourney _buildDirectStageRide(
+  static Future<ActiveJourney> _buildDirectStageRide(
     LatLng origin,
     LatLng destinationCoord,
     String destLabel,
     StageData boardingStage,
     StageData alightingStage,
-  ) {
+  ) async {
     final segments = <RouteSegment>[];
     final boardingCoord = boardingStage.location;
     final alightingCoord = alightingStage.location;
 
     final walkToStage =
-        _walkSegment('Walk to ${boardingStage.name}', origin, boardingCoord);
+        await _walkSegment('Walk to ${boardingStage.name}', origin, boardingCoord);
     if (walkToStage.distanceMeters >= 1.0) segments.add(walkToStage);
 
     final rideCoords = [boardingCoord, alightingCoord];
@@ -219,7 +231,7 @@ class RouteBuilderService {
       ));
     }
 
-    final walkFromStage = _walkSegment(
+    final walkFromStage = await _walkSegment(
         'Walk to $destLabel', alightingCoord, destinationCoord);
     if (walkFromStage.distanceMeters >= 1.0) segments.add(walkFromStage);
 
@@ -233,13 +245,13 @@ class RouteBuilderService {
   /// quieter alighting corridor's nearest stage — by walking there first.
   /// Returns null when the bypass does not apply (quiet corridor too far,
   /// nothing rideable from the alternative stage, same corridor).
-  static ActiveJourney? _buildBusyCorridorBypass(
+  static Future<ActiveJourney?> _buildBusyCorridorBypass(
     LatLng origin,
     LatLng destination,
     String destLabel,
     StageData alightingStage,
     CorridorData alightingCorridor,
-  ) {
+  ) async {
     if (kBusyCorridorIds.contains(alightingCorridor.id)) return null;
 
     final nearest = _findNearestStageOnCorridor(
@@ -259,7 +271,8 @@ class RouteBuilderService {
 
     final segments = <RouteSegment>[];
 
-    final walkToAlt = _walkSegment('Walk to ${nearest.name}', origin, nearest.location);
+    final walkToAlt =
+        await _walkSegment('Walk to ${nearest.name}', origin, nearest.location);
     if (walkToAlt.distanceMeters >= 1.0) segments.add(walkToAlt);
 
     final route = _getPrimaryRoute(nearest, alightingStage);
@@ -273,19 +286,29 @@ class RouteBuilderService {
       toStageId: alightingStage.id,
     ));
 
-    final walkToDest =
-        _walkSegment('Walk to $destLabel', alightingCoord, destination);
+    final walkToDest = await _walkSegment(
+        'Walk to $destLabel', alightingCoord, destination);
     if (walkToDest.distanceMeters >= 1.0) segments.add(walkToDest);
 
     return segments.isEmpty ? null : ActiveJourney(segments: segments);
   }
 
-  static RouteSegment _walkSegment(String label, LatLng from, LatLng to) {
+  /// Builds a walking leg that follows real roads (Mapbox Directions walking
+  /// profile), so the drawn line runs along pavements instead of jumping
+  /// corner-to-corner. On any directions failure the service returns a
+  /// straight line flagged approximate - the leg is still drawn, and Route
+  /// Preview / Active Navigation show "Approximate route".
+  static Future<RouteSegment> _walkSegment(
+      String label, LatLng from, LatLng to) async {
+    final route = await walkingDirections.route(from, to);
     final segment = RouteSegment.walk(
       label: label,
-      coordinates: _createWalkPath(from, to),
+      coordinates: route.points,
       startPoint: from,
       endPoint: to,
+      distanceMeters: route.distanceMeters,
+      estimatedDuration: Duration(seconds: route.durationSeconds.round()),
+      approximate: route.approximate,
     );
     return segment.copyWith(
         fareEstimate: FareCalculatorService.calculateFare(segment));
@@ -393,11 +416,6 @@ class RouteBuilderService {
     return total;
   }
 
-  static List<LatLng> _createWalkPath(LatLng from, LatLng to) {
-    // Simple direct path for walking - could be enhanced with OSRM walking profile
-    return [from, to];
-  }
-
   static List<LatLng> _getCorridorSlice(
     CorridorData corridor,
     LatLng from,
@@ -429,29 +447,43 @@ class RouteBuilderService {
       }
     }
 
-    // Ensure correct order
-    if (fromIdx > toIdx) {
-      final temp = fromIdx;
-      fromIdx = toIdx;
-      toIdx = temp;
-    }
+    // Walk the slice in TRAVEL order. The old code always sliced from the
+    // lower index to the higher one, so a ride towards town (destination
+    // behind the origin on the corridor polyline) ran to the opposite end and
+    // then snapped back to the destination - the visible out-and-back spike.
+    final slice = fromIdx <= toIdx
+        ? corridor.polyline.sublist(fromIdx, toIdx + 1)
+        : corridor.polyline.sublist(toIdx, fromIdx + 1).reversed.toList();
 
-    // Return slice (including endpoints)
-    final slice = corridor.polyline.sublist(fromIdx, toIdx + 1);
-    return [from, ...slice, to];
+    // Return the slice with exact stage endpoints, dropping repeats so the
+    // same coordinate is never emitted twice in a row.
+    final points = <LatLng>[from, ...slice, to];
+    final deduped = <LatLng>[];
+    for (final point in points) {
+      if (deduped.isEmpty || !_sameCoordinate(deduped.last, point)) {
+        deduped.add(point);
+      }
+    }
+    return deduped;
   }
+
+  /// Equal coordinates to ~1 m (stage coords often sit exactly on a corridor
+  /// vertex, so the same point is supplied twice).
+  static bool _sameCoordinate(LatLng a, LatLng b) =>
+      (a.latitude - b.latitude).abs() < 1e-5 &&
+      (a.longitude - b.longitude).abs() < 1e-5;
 
   static String _getPrimaryRoute(StageData from, StageData to) {
     final commonRoutes = from.routeNumbers.where((r) => to.routeNumbers.contains(r)).toList();
     return commonRoutes.isNotEmpty ? commonRoutes.first : (from.routeNumbers.isNotEmpty ? from.routeNumbers.first : 'N/A');
   }
 
-  static List<RouteSegment> _buildMultiCorridorRoute(
+  static Future<List<RouteSegment>> _buildMultiCorridorRoute(
     StageData boardingStage,
     StageData alightingStage,
     CorridorData boardingCorridor,
     CorridorData alightingCorridor,
-  ) {
+  ) async {
     final segments = <RouteSegment>[];
 
     // Ride first corridor to its end/transfer point
@@ -499,15 +531,22 @@ class RouteBuilderService {
       transferCoord.longitude,
     );
     if (nextCorridorStage != null) {
+      // Connect whatever the previous segment actually ended at to the stage
+      // where the next ride begins. The old threshold skipped short hops (e.g.
+      // Nyayo Stadium Stage -> Commercial Stage, ~200 m), and the renderer's
+      // stitch then drew a straight connector that doubled back over the walk
+      // - the visible out-and-back spike. Real walking geometry closes the
+      // gap instead, even when the hop is short.
+      final lastEnd = segments.isEmpty ? boardingCoord : segments.last.endPoint;
       final transferDist = _haversineDistance(
-        transferCoord.latitude, transferCoord.longitude,
+        lastEnd.latitude, lastEnd.longitude,
         nextCorridorStage.lat, nextCorridorStage.lng,
       );
 
-      if (transferDist > kTransferWalkThresholdMeters) {
-        segments.add(_walkSegment(
+      if (transferDist >= 1.0) {
+        segments.add(await _walkSegment(
           'Walk to ${nextCorridorStage.name}',
-          transferCoord,
+          lastEnd,
           nextCorridorStage.location,
         ));
       }

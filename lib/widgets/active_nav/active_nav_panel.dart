@@ -42,39 +42,87 @@ class ActiveNavPanel extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(
-            height: 16,
-            child: Center(
-              child: _Handle(),
+      child: SingleChildScrollView(
+        controller: scrollController,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(
+              height: 16,
+              child: Center(
+                child: _Handle(),
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: NavSummaryRow(data: data, isDark: isDark),
-          ),
-          const SizedBox(height: 4),
-          Expanded(
-            child: ListView(
-              controller: scrollController,
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-              children: [
-                NavTimelineCard(
-                  steps: steps,
-                  data: data,
-                  expanded: expanded,
-                  isDark: isDark,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: NavSummaryRow(data: data, isDark: isDark),
+            ),
+            if (data.isApproximate)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline_rounded,
+                      size: 13,
+                      color: NaviColors.textSecondary(isDark),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Approximate route',
+                      style: TextStyle(
+                        fontFamily: NaviType.uiFontFamily,
+                        fontSize: 12,
+                        color: NaviColors.textSecondary(isDark),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: NavTimelineCard(
+                steps: steps,
+                data: data,
+                expanded: expanded,
+                isDark: isDark,
+              ),
             ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(20, 0, 20, 8 + bottomInset),
-            child: _EndJourneyButton(onPressed: () => _confirmEnd(context)),
-          ),
-        ],
+            if (data.hasFare)
+              Padding(
+                key: const Key('activeNavFareRow'),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                child: SizedBox(
+                  height: 32,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.confirmation_number_outlined,
+                        size: 16,
+                        color: NaviColors.textSecondary(isDark),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        data.fareLabel,
+                        style: TextStyle(
+                          fontFamily: NaviType.uiFontFamily,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: NaviColors.textPrimary(isDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(20, 8, 20, 8 + bottomInset),
+              child: _EndJourneyButton(onPressed: () => _confirmEnd(context)),
+            ),
+          ],
+        ),
       ),
     );
   }

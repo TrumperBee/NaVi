@@ -29,6 +29,14 @@ class NaviColors {
   /// GPS dot / live tracking only.
   static const signalBlue = Color(0xFF1A73E8);
 
+  /// Route line, light mode. Pinned by the route-style spec to the same blue
+  /// as the GPS puck, but named separately so the "signalBlue is for GPS"
+  /// rule above stays explicit at every call site.
+  static const routeBlue = Color(0xFF1A73E8);
+
+  /// Route line, dark mode - lifted so it stays legible over the night map.
+  static const routeBlueDark = Color(0xFF4D94FF);
+
   /// Proximity alerts.
   static const alertAmber = Color(0xFFF59E0B);
 
@@ -64,7 +72,10 @@ class NaviColors {
   static const textPrimaryDark = Color(0xFFF9FAFB);
 
   /// Secondary/caption text.
-  static const textSecondaryDark = Color(0xFFB0B3B8);
+  ///
+  /// Lifted from #B0B3B8 to keep small bracketed copy (e.g. "(849 m)") above
+  /// 4.5:1 on the #1E1E1E dark surface.
+  static const textSecondaryDark = Color(0xFFAEB5BF);
 
   /// Hairline dividers.
   static const dividerDark = Color(0xFF3A3D40);

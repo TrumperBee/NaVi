@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:navi_app/design/navi_colors.dart';
 import 'package:navi_app/models/active_journey.dart';
+import 'package:navi_app/models/fare_estimate.dart' as fare;
 import 'package:navi_app/models/route_segment.dart';
 import 'package:navi_app/models/transport_models.dart';
 import 'package:navi_app/screens/navigation_overlay.dart';
@@ -66,6 +67,20 @@ void main() {
       ],
       currentSegmentIndex: currentSegmentIndex,
     );
+  }
+
+  /// Same journey with a real calculator-shaped fare estimate stamped on the
+  /// matatu leg, so the panel's fare row has a truthful amount to show.
+  ActiveJourney walkRideWalkWithFare(int amountKsh) {
+    final segments = walkRideWalk().segments.toList();
+    segments[1] = segments[1].copyWith(
+      fareEstimate: fare.FareEstimate.matatu(
+        amountKsh: amountKsh,
+        tier: fare.FareTier.short,
+        timeOfDay: fare.TimeOfDay.offPeak,
+      ),
+    );
+    return ActiveJourney(segments: segments);
   }
 
   Widget overlays({
@@ -159,11 +174,27 @@ void main() {
       expect(find.byKey(const Key('mapZone')), findsOneWidget);
     });
 
-    testWidgets('panel opens at ~42% and can grow to 80%', (tester) async {
-      expect(NavigationOverlay.initialExtentFor(const Size(400, 900)),
-          closeTo(0.42, 0.001));
+    testWidgets('panel opens just tall enough for its content', (tester) async {
+      const size = Size(400, 900);
+      expect(NavigationOverlay.initialExtentFor(size),
+          closeTo(NavigationOverlay.collapsedContentPx / 900, 0.001));
+      expect(
+        NavigationOverlay.initialExtentFor(
+          size,
+          bottomInset: 24,
+          hasFare: true,
+        ),
+        closeTo(
+          (NavigationOverlay.collapsedContentPx +
+                  24 +
+                  NavigationOverlay.fareRowPx) /
+              900,
+          0.001,
+        ),
+      );
       expect(NavigationOverlay.maxExtent, 0.80);
-      expect(NavigationOverlay.minExtent, lessThan(0.42));
+      expect(NavigationOverlay.minExtent,
+          lessThan(NavigationOverlay.initialExtentFor(size)));
     });
 
     testWidgets('360dp width lays out without overflow', (tester) async {
@@ -174,15 +205,47 @@ void main() {
       expect(banner.width, 360 - 32, reason: '16dp side margins');
 
       // The collapsed sheet shows the current step and the next two without
-      // clipping: every timeline row sits above the fixed action row.
+      // clipping, and its height is the content height — no empty gap above
+      // the End Journey button on a 360dp phone.
       final panel = tester.getRect(find.byKey(const Key('activeNavPanel')));
-      expect(panel.top / 640, greaterThanOrEqualTo(0.55 - 0.01));
+      expect(panel.height, closeTo(NavigationOverlay.collapsedContentPx, 1));
       final rows = find.byType(NavTimelineRow);
       expect(rows, findsNWidgets(3));
       final endButton =
           tester.getRect(find.widgetWithText(FilledButton, 'End Journey'));
       expect(
           tester.getRect(rows.last).bottom, lessThanOrEqualTo(endButton.top));
+      final bottomInset =
+          MediaQuery.of(tester.element(find.byKey(const Key('activeNavPanel'))))
+              .padding
+              .bottom;
+      expect(panel.bottom - endButton.bottom,
+          inInclusiveRange(8, 20 + bottomInset),
+          reason: 'the action sits at the bottom with only its inset');
+    });
+
+    testWidgets('412dp phone gives the freed space back to the map',
+        (tester) async {
+      await pumpOverlay(tester, size: const Size(412, 915));
+
+      expect(tester.takeException(), isNull);
+      final panel = tester.getRect(find.byKey(const Key('activeNavPanel')));
+      expect(panel.height, closeTo(NavigationOverlay.collapsedContentPx, 1));
+      expect(panel.top / 915, greaterThan(0.65),
+          reason: 'a tall phone leaves more than two thirds to the map');
+
+      final endButton =
+          tester.getRect(find.widgetWithText(FilledButton, 'End Journey'));
+      final bottomInset =
+          MediaQuery.of(tester.element(find.byKey(const Key('activeNavPanel'))))
+              .padding
+              .bottom;
+      expect(panel.bottom - endButton.bottom,
+          inInclusiveRange(8, 20 + bottomInset),
+          reason: 'the action sits at the bottom with only its inset');
+      expect(find.byType(NavTimelineRow), findsNWidgets(3));
+      expect(tester.getRect(find.byType(NavTimelineRow).last).bottom,
+          lessThanOrEqualTo(endButton.top));
     });
   });
 
@@ -227,6 +290,28 @@ void main() {
         findsOneWidget,
       );
       expect(tester.getSize(banner).height, ActiveNavTheme.bannerHeight);
+      expect(
+        find.descendant(
+          of: banner,
+          matching: find.text('Then board Route 46'),
+        ),
+        findsOneWidget,
+        reason: 'the second line names the next real action',
+      );
+    });
+
+    testWidgets('walking second line uses the real next route number',
+        (tester) async {
+      final segments = walkRideWalk().segments.toList();
+      segments[1] = segments[1].copyWith(routeNumber: '69');
+      await pumpOverlay(
+        tester,
+        journey: ActiveJourney(segments: segments),
+      );
+
+      expect(find.text('Then board Route 69'), findsOneWidget);
+      expect(find.textContaining('Road'), findsNothing,
+          reason: 'no road name is invented');
     });
 
     testWidgets('matatu leg shows the route and alighting stage',
@@ -417,8 +502,27 @@ void main() {
         of: find.byWidget(upcoming),
         matching: find.text(upcoming.step.title),
       ));
-      expect(text.style?.color, NaviColors.textSecondaryLight);
+      expect(text.style?.color, NaviColors.textPrimaryLight);
       expect(text.style!.color!.a, 1.0);
+    });
+
+    testWidgets('secondary copy uses the dark-mode secondary colour',
+        (tester) async {
+      final data = ActiveNavData(
+        journey: walkRideWalk(currentSegmentIndex: 1),
+        stages: stages,
+      );
+
+      await tester.pumpWidget(panel(data, expanded: false, dark: true));
+
+      final rows =
+          tester.widgetList<NavTimelineRow>(find.byType(NavTimelineRow));
+      final withSubtitle = rows.firstWhere((r) => r.step.subtitle != null);
+      final subtitle = tester.widget<Text>(find.descendant(
+        of: find.byWidget(withSubtitle),
+        matching: find.text(withSubtitle.step.subtitle!),
+      ));
+      expect(subtitle.style?.color, NaviColors.textSecondaryDark);
     });
 
     testWidgets('expanded ride reveals the stop count and its stop names',
@@ -440,6 +544,77 @@ void main() {
       await tester.tap(find.text('2 stops'));
       await tester.pumpAndSettle();
       expect(find.text('Kariobangi · Makadara'), findsOneWidget);
+    });
+  });
+
+  group('approximate route', () {
+    testWidgets('an approximate walking leg shows the small note',
+        (tester) async {
+      final journey = ActiveJourney(segments: [
+        RouteSegment.walk(
+          label: 'Walk to Kariobangi Stage',
+          coordinates: [origin, boarding],
+          startPoint: origin,
+          endPoint: boarding,
+          approximate: true,
+        ),
+        RouteSegment.matatu(
+          label: 'Ride Route 46 to Makadara',
+          coordinates: [boarding, alighting],
+          routeNumber: '46',
+          fromStageId: 'kariobangi',
+          toStageId: 'makadara',
+          startPoint: boarding,
+          endPoint: alighting,
+        ),
+      ]);
+
+      await pumpOverlay(tester, journey: journey);
+
+      expect(find.text('Approximate route'), findsOneWidget);
+    });
+
+    testWidgets('a fully road-resolved journey shows no note', (tester) async {
+      await pumpOverlay(tester);
+      expect(find.text('Approximate route'), findsNothing);
+    });
+  });
+
+  group('fare row', () {
+    testWidgets('shows the calculator fare between timeline and End Journey',
+        (tester) async {
+      await pumpOverlay(
+        tester,
+        journey: walkRideWalkWithFare(80),
+        size: const Size(412, 915),
+      );
+
+      expect(find.byKey(const Key('activeNavFareRow')), findsOneWidget);
+      expect(find.text('Fare KSh 80'), findsOneWidget);
+
+      final timeline = tester.getRect(find.byType(NavTimelineCard));
+      final fareRow = tester.getRect(find.byKey(const Key('activeNavFareRow')));
+      final endButton =
+          tester.getRect(find.widgetWithText(FilledButton, 'End Journey'));
+      expect(fareRow.top, greaterThanOrEqualTo(timeline.bottom));
+      expect(endButton.top, greaterThanOrEqualTo(fareRow.bottom));
+      expect(endButton.top - fareRow.bottom, lessThanOrEqualTo(16),
+          reason: 'End Journey sits directly under the fare row');
+    });
+
+    testWidgets('hidden when the fare is unknown', (tester) async {
+      await pumpOverlay(tester);
+
+      expect(find.byKey(const Key('activeNavFareRow')), findsNothing);
+      expect(find.textContaining('Fare KSh'), findsNothing);
+    });
+
+    test('a known fare adds just enough height to the initial sheet', () {
+      const size = Size(400, 900);
+      final without = NavigationOverlay.initialExtentFor(size);
+      final withFare = NavigationOverlay.initialExtentFor(size, hasFare: true);
+      expect(withFare - without,
+          closeTo(NavigationOverlay.fareRowPx / 900, 0.001));
     });
   });
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../design/navi_marker_theme.dart';
 import '../models/active_journey.dart';
 import '../models/transport_models.dart';
 import '../services/stage_route_summary.dart';
@@ -114,6 +115,10 @@ class _RoutePreviewScreenState extends State<RoutePreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Preview pins are baked into Mapbox style images by the map manager (the
+    // map itself lives in Home). Publish the sheet's brightness so those
+    // images use the matching white / dark-grey label chip.
+    NaviMarkerTheme.isDark = Theme.of(context).brightness == Brightness.dark;
     final size = MediaQuery.sizeOf(context);
     final initialExtent = RoutePreviewScreen.initialExtentFor(size);
     final extent = _currentExtent(size);

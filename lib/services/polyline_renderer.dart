@@ -1,9 +1,13 @@
-import 'dart:math';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide DistanceCalculator;
+import 'package:navi_app/design/navi_colors.dart';
 import 'package:navi_app/models/active_journey.dart';
 import 'package:navi_app/models/route_segment.dart';
+import 'package:navi_app/services/distance_calculator.dart';
 import 'package:navi_app/features/map/mapbox_map_manager.dart';
 
 /// A run of consecutive coordinates sharing one transport mode. Runs are the
@@ -16,8 +20,12 @@ class PolylineSegmentRun {
   const PolylineSegmentRun({required this.mode, required this.coords});
 }
 
-/// Renders the journey polyline as high-contrast, per-mode annotations:
-/// walking legs are DASHED GREEN, matatu legs are SOLID BLUE.
+/// Renders the journey polyline as ONE solid route style.
+///
+/// Both the ride and the walking legs are solid blue with a white casing:
+/// 7 dp for the ride, 6 dp for walks, on a casing 4 dp wider, with round caps
+/// and round joins. Walk vs ride is communicated by weight, not by a different
+/// colour or a fake dash pattern.
 ///
 /// [renderJourney] with [preview] = true renders the full confirmed route
 /// (used by the pre-trip overview); the non-preview mode keeps the
@@ -28,113 +36,254 @@ class PolylineSegmentRun {
 /// annotation uses ROUND caps/joins so walk → matatu → walk transitions read
 /// as ONE line, not two separate segments.
 class PolylineRendererService {
+  /// Route line weight, ride leg (dp).
+  static const double rideWidth = 7.0;
+
+  /// Route line weight, walking leg (dp).
+  static const double walkWidth = 6.0;
+
+  /// The white casing under every route line is this much wider than the line.
+  static const double casingExtraWidth = 4.0;
+
   final MapboxMapManager _mapManager;
 
-  /// High-contrast walk line. Distinct from the transit brand green so the
-  /// dashed walk and the blue matatu ride never both read as one line.
-  static const Color _walkColor = Color(0xFF00875A);
-  static const Color _rideColor = Color(0xFF1E88E5);
+  /// Whether the night map style is up. Set by the owning screen on every
+  /// build so theme switches repaint the line without a map rebuild.
+  bool isDark;
 
-  PolylineRendererService(this._mapManager);
+  PolylineRendererService(this._mapManager, {this.isDark = false});
+
+  /// Route blue: the light-mode tone by day, the lifted tone at night.
+  static Color routeColorFor(bool isDark) =>
+      isDark ? NaviColors.routeBlueDark : NaviColors.routeBlue;
 
   Future<void> initialize() async {}
 
-  Future<void> renderJourney(ActiveJourney journey,
-      {bool preview = false}) async {
-    final options =
-        preview ? buildPreviewOptions(journey) : buildLiveOptions(journey);
-    await _mapManager.setPolylineAnnotations(options);
+  Future<void> renderJourney(
+    ActiveJourney journey, {
+    bool preview = false,
+    bool? isDark,
+    bool navigationLine = false,
+    String? debugEvent,
+  }) async {
+    final dark = isDark ?? this.isDark;
+    final options = preview
+        ? buildPreviewOptions(journey, isDark: dark)
+        : buildLiveOptions(journey, isDark: dark);
+    _logHandoff(debugEvent, options);
+    await _mapManager.setPolylineAnnotations(options,
+        navigationLine: navigationLine);
   }
 
-  Future<void> updateCurrentSegment(ActiveJourney journey) async {
-    await _mapManager.setPolylineAnnotations(buildLiveOptions(journey));
+  Future<void> updateCurrentSegment(
+    ActiveJourney journey, {
+    String debugEvent = 'gps_update',
+  }) async {
+    final options = buildLiveOptions(journey, isDark: isDark);
+    _logHandoff(debugEvent, options);
+    await _mapManager.setPolylineAnnotations(options, navigationLine: true);
   }
 
   Future<void> clearJourney() async {
-    await _mapManager.setPolylineAnnotations([]);
+    await _mapManager.setPolylineAnnotations([], navigationLine: true);
+  }
+
+  /// STEP 0 diagnostic, kept in debug builds: reports the exact point counts
+  /// handed to Mapbox on the first live frame and after every GPS fix, so a
+  /// disappearing line can be traced without a device attached.
+  static void _logHandoff(
+      String? event, List<PolylineAnnotationOptions> options) {
+    if (event == null || !kDebugMode) return;
+    final lines = options.map((option) {
+      final coordinates = option.geometry.coordinates
+          .map((point) => '(${point.lat}, ${point.lng})')
+          .join(' -> ');
+      return '${option.lineWidth}dp $coordinates';
+    }).join(' | ');
+    debugPrint('[ACTIVE_NAV_LINE] $event options=${options.length} $lines');
   }
 
   /// Static, side-effect-free preview options — testable without a map.
   static List<PolylineAnnotationOptions> buildPreviewOptions(
-      ActiveJourney journey) {
+    ActiveJourney journey, {
+    bool isDark = false,
+  }) {
     return _optionsForRuns(
       stitchRuns(runsFromSegments(journey.segments)),
-      remainingOpacity: 0.95,
+      isDark: isDark,
     );
   }
 
   /// Static, side-effect-free live options (progressively dimmed traveled
   /// path + remaining route) — testable without a map.
   static List<PolylineAnnotationOptions> buildLiveOptions(
-      ActiveJourney journey) {
+    ActiveJourney journey, {
+    bool isDark = false,
+  }) {
     final options = <PolylineAnnotationOptions>[];
 
     final traveledCoords = journey.getTraveledCoordinates();
     if (traveledCoords.length >= 2) {
       options.add(PolylineAnnotationOptions(
         lineColor: Colors.grey.toARGB32(),
-        lineWidth: 3.0,
+        lineWidth: 4.0,
         lineOpacity: 0.5,
         lineJoin: LineJoin.ROUND,
         geometry: _toLineString(traveledCoords),
       ));
     }
 
-    // Build the remaining route as a single mode-run chain so the current
-    // segment, upcoming segments and transfer walks all connect visually.
-    final remainingRuns = <PolylineSegmentRun>[];
-    final current = journey.currentSegment;
-    final currentRemaining = journey.getCurrentSegmentRemainingCoordinates();
-    if (current != null && currentRemaining.isNotEmpty) {
-      remainingRuns.add(
-          PolylineSegmentRun(mode: current.mode, coords: currentRemaining));
-    }
-    for (final segment in journey.upcomingSegments) {
-      remainingRuns.add(
-          PolylineSegmentRun(mode: segment.mode, coords: segment.coordinates));
-    }
+    // Build the remaining route as one mode-run chain from the user's live
+    // position forward. Every leg is included; only geometry already behind
+    // the traveller is dropped.
     options.addAll(_optionsForRuns(
-      stitchRuns(remainingRuns),
-      remainingOpacity: 0.95,
-      live: true,
+      remainingRuns(journey),
+      isDark: isDark,
     ));
 
     return options;
   }
 
-  /// Converts a list of stitched runs into concrete annotations: solid blue
-  /// for matatu legs, dashed green for walk legs. All annotations use rounded
-  /// joins so neighbouring legs blend into one continuous line.
+  /// All not-yet-travelled geometry, stitched into contiguous same-mode runs.
   ///
-  /// [live] widens the remaining-route stroke to the navigation spec (8dp blue
-  /// with a 2dp white casing) so it reads clearly over satellite imagery; the
-  /// preview keeps the lighter 6dp stroke it was designed with.
+  /// The current leg starts at the GPS point itself (snapped to the nearest
+  /// route vertex) rather than two vertices behind it, so the blue line never
+  /// extends back through already-walked geometry.
+  static List<PolylineSegmentRun> remainingRuns(ActiveJourney journey) {
+    final runs = <PolylineSegmentRun>[];
+    final current = journey.currentSegment;
+    final currentRemaining = remainingCoordinatesFromUser(journey);
+    if (current != null && currentRemaining.length >= 2) {
+      runs.add(
+          PolylineSegmentRun(mode: current.mode, coords: currentRemaining));
+    }
+    for (final segment in journey.upcomingSegments) {
+      if (segment.coordinates.length >= 2) {
+        runs.add(PolylineSegmentRun(
+            mode: segment.mode, coords: segment.coordinates));
+      }
+    }
+    return stitchRuns(runs);
+  }
+
+  /// Current-leg coordinates from the traveller forward, with the GPS point as
+  /// the first vertex. Used by both the renderer and the camera framer so the
+  /// line and the "next 300 m" viewport start from the same place.
+  static List<LatLng> remainingCoordinatesFromUser(ActiveJourney journey) {
+    final segment = journey.currentSegment;
+    if (segment == null || segment.coordinates.isEmpty) return const [];
+    final coords = segment.coordinates;
+    final position = journey.currentPosition;
+    if (position == null) return List<LatLng>.of(coords);
+    if (coords.length == 1) return [position, coords.single];
+
+    // Project the GPS fix onto the nearest polyline *segment*, not the nearest
+    // vertex. Snapping to a vertex can point the blue line back down geometry
+    // the traveller has already covered whenever the closer vertex happens to
+    // sit behind them.
+    final latitudeScale =
+        math.cos(position.latitude * math.pi / 180).abs().clamp(0.01, 1.0);
+    var bestIndex = 0;
+    var bestT = 0.0;
+    var bestDistance = double.infinity;
+    for (var i = 0; i < coords.length - 1; i++) {
+      final a = coords[i];
+      final b = coords[i + 1];
+      final dx = (b.longitude - a.longitude) * latitudeScale;
+      final dy = b.latitude - a.latitude;
+      final px = (position.longitude - a.longitude) * latitudeScale;
+      final py = position.latitude - a.latitude;
+      final denominator = dx * dx + dy * dy;
+      final t = denominator == 0
+          ? 0.0
+          : ((px * dx + py * dy) / denominator).clamp(0.0, 1.0);
+      final projected = _interpolate(a, b, t);
+      final distance = DistanceCalculator.distanceMeters(position, projected);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+        bestT = t;
+      }
+    }
+
+    // Keep the far end of the segment we are on, then every later vertex. If
+    // the fix is already at that far end, skip it and continue from the next.
+    final firstAhead = bestT < 0.999 ? bestIndex + 1 : bestIndex + 2;
+    final result = <LatLng>[];
+    void add(LatLng point) {
+      if (result.isEmpty ||
+          DistanceCalculator.distanceMeters(result.last, point) > 0.01) {
+        result.add(point);
+      }
+    }
+
+    add(position);
+    for (var i = firstAhead; i < coords.length; i++) {
+      add(coords[i]);
+    }
+    // A two-point line is still needed for the final approach to destination.
+    if (result.length == 1) result.add(coords.last);
+    return result;
+  }
+
+  /// Geometry for route-ahead camera framing, capped at [meters] instead of
+  /// using the whole remaining journey (which can be several kilometres).
+  static List<LatLng> pointsAhead(
+    ActiveJourney journey, {
+    double meters = 300,
+  }) {
+    final result = <LatLng>[];
+    var covered = 0.0;
+
+    outer:
+    for (final run in remainingRuns(journey)) {
+      final coords = run.coords;
+      if (coords.isEmpty) continue;
+      if (result.isEmpty) result.add(coords.first);
+      for (var i = 1; i < coords.length; i++) {
+        final from = coords[i - 1];
+        final to = coords[i];
+        final segmentLength = DistanceCalculator.distanceMeters(from, to);
+        if (covered + segmentLength >= meters) {
+          if (segmentLength > 0) {
+            final fraction =
+                ((meters - covered) / segmentLength).clamp(0.0, 1.0);
+            result.add(_interpolate(from, to, fraction));
+          }
+          break outer;
+        }
+        covered += segmentLength;
+        result.add(to);
+      }
+    }
+    return result;
+  }
+
+  static LatLng _interpolate(LatLng from, LatLng to, double t) => LatLng(
+        from.latitude + (to.latitude - from.latitude) * t,
+        from.longitude + (to.longitude - from.longitude) * t,
+      );
+
+  /// Converts stitched runs into solid route annotations. Walking runs are
+  /// emitted first so the heavier ride stroke stays on top where the two meet.
   static List<PolylineAnnotationOptions> _optionsForRuns(
     List<PolylineSegmentRun> runs, {
-    required double remainingOpacity,
-    bool live = false,
+    required bool isDark,
   }) {
+    final routeColor = routeColorFor(isDark);
     final options = <PolylineAnnotationOptions>[];
-    final rideWidth = live ? 8.0 : 6.0;
-    final rideCasing = live ? 2.0 : 1.5;
-    for (final run in runs) {
-      if (run.coords.length < 2) continue;
-      if (run.mode == SegmentMode.matatu) {
+    for (final mode in const [SegmentMode.walk, SegmentMode.matatu]) {
+      for (final run in runs) {
+        if (run.coords.length < 2 || run.mode != mode) continue;
         options.add(PolylineAnnotationOptions(
-          lineColor: _rideColor.toARGB32(),
-          lineWidth: rideWidth,
-          lineOpacity: remainingOpacity,
+          lineColor: routeColor.toARGB32(),
+          lineWidth: mode == SegmentMode.matatu ? rideWidth : walkWidth,
+          lineOpacity: 1.0,
+          // The border is drawn under the fill, so this is the white casing.
           lineBorderColor: Colors.white.toARGB32(),
-          lineBorderWidth: rideCasing,
+          lineBorderWidth: casingExtraWidth,
           lineJoin: LineJoin.ROUND,
           geometry: _toLineString(run.coords),
-        ));
-      } else {
-        options.addAll(_dashedWalk(
-          run.coords,
-          opacity: remainingOpacity,
-          dashWidth: live ? 6.0 : 4.5,
-          dashCasing: live ? 1.5 : 1.0,
         ));
       }
     }
@@ -189,81 +338,9 @@ class PolylineRendererService {
     return result;
   }
 
-  /// Splits a walking segment into short high-contrast dashes (the Mapbox
-  /// polyline annotation API has no dash-array, so dashed legs are emulated).
-  /// Dashes always end exactly at the leg's endpoint so they meet the next
-  /// (matatu) leg at the junction point.
-  static List<PolylineAnnotationOptions> _dashedWalk(
-    List<LatLng> coords, {
-    double opacity = 0.95,
-    double dashMeters = 18,
-    double gapMeters = 9,
-    double dashWidth = 4.5,
-    double dashCasing = 1.0,
-  }) {
-    if (coords.length < 2) return [];
-    final pts = List<LatLng>.from(coords);
-    final cumulative = <double>[];
-    double acc = 0.0;
-    cumulative.add(0.0);
-    for (int i = 1; i < pts.length; i++) {
-      acc += _distanceBetween(pts[i - 1], pts[i]);
-      cumulative.add(acc);
-    }
-    final total = acc;
-    if (total <= 0) return [];
-
-    LatLng pointAt(double d) {
-      for (int i = 1; i < cumulative.length; i++) {
-        if (cumulative[i] >= d) {
-          final segLen = cumulative[i] - cumulative[i - 1];
-          if (segLen <= 0) return pts[i];
-          final t = (d - cumulative[i - 1]) / segLen;
-          return _interpolate(pts[i - 1], pts[i], t);
-        }
-      }
-      return pts.last;
-    }
-
-    final dashes = <PolylineAnnotationOptions>[];
-    double cursor = 0.0;
-    while (cursor < total) {
-      final dashEnd = min(cursor + dashMeters, total);
-      if (dashEnd - cursor > 1.0) {
-        dashes.add(PolylineAnnotationOptions(
-          lineColor: _walkColor.toARGB32(),
-          lineWidth: dashWidth,
-          lineOpacity: opacity,
-          lineBorderColor: Colors.white.toARGB32(),
-          lineBorderWidth: dashCasing,
-          lineJoin: LineJoin.ROUND,
-          geometry: _toLineString([pointAt(cursor), pointAt(dashEnd)]),
-        ));
-      }
-      cursor = dashEnd + gapMeters;
-    }
-    return dashes;
-  }
-
-  static LatLng _interpolate(LatLng a, LatLng b, double t) {
-    return LatLng(
-      a.latitude + (b.latitude - a.latitude) * t,
-      a.longitude + (b.longitude - a.longitude) * t,
-    );
-  }
-
-  static double _distanceBetween(LatLng a, LatLng b) {
-    const double R = 6371000;
-    final dLat = (b.latitude - a.latitude) * pi / 180;
-    final dLng = (b.longitude - a.longitude) * pi / 180;
-    final h = sin(dLat / 2) * sin(dLat / 2) +
-        cos(a.latitude * pi / 180) *
-            cos(b.latitude * pi / 180) *
-            sin(dLng / 2) *
-            sin(dLng / 2);
-    return 2 * atan2(sqrt(h), sqrt(1 - h)) * R;
-  }
-
+  /// Geometry is passed through exactly as resolved (Mapbox `overview=full`),
+  /// with no decimation, so every corner that is closer than 5 m apart is
+  /// still drawn.
   static LineString _toLineString(List<LatLng> points) => LineString.fromJson({
         'type': 'LineString',
         'coordinates': points.map((p) => [p.longitude, p.latitude]).toList(),

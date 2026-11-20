@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:navi_app/models/active_journey.dart';
 import 'package:navi_app/models/route_segment.dart';
+import 'package:navi_app/design/navi_colors.dart';
+import 'package:navi_app/services/distance_calculator.dart' as nav_distance;
 import 'package:navi_app/services/polyline_renderer.dart';
 import 'package:test/test.dart';
 
@@ -32,7 +33,8 @@ void main() {
           LatLng(-1.2833, 36.8167),
           walkEnd,
         ]),
-        const PolylineSegmentRun(mode: SegmentMode.matatu, coords: [rideStart, rideEnd]),
+        const PolylineSegmentRun(
+            mode: SegmentMode.matatu, coords: [rideStart, rideEnd]),
       ]);
 
       expect(stitched.length, equals(2));
@@ -146,7 +148,7 @@ void main() {
       }
     });
 
-    test('walk dashed annotations use round joins', () {
+    test('walk annotations use the same solid blue style, round joins', () {
       final journey = ActiveJourney(segments: [
         RouteSegment.walk(
           label: 'Walk to Stage A',
@@ -161,11 +163,118 @@ void main() {
 
       final options = PolylineRendererService.buildPreviewOptions(journey);
 
-      expect(options, isNotEmpty);
+      expect(options, hasLength(1));
       for (final option in options) {
         expect(option.lineJoin, equals(LineJoin.ROUND));
-        expect(option.lineColor, const Color(0xFF00875A).toARGB32());
+
+        expect(option.lineColor, NaviColors.routeBlue.toARGB32());
+        expect(option.lineWidth, PolylineRendererService.walkWidth);
       }
+    });
+  });
+
+  group('live remaining route', () {
+    const start = LatLng(-1.2800, 36.8100);
+    const user = LatLng(-1.2800, 36.8109);
+    const boarding = LatLng(-1.2800, 36.8110);
+    const rideMid = LatLng(-1.2820, 36.8140);
+    const alighting = LatLng(-1.2840, 36.8170);
+    const destination = LatLng(-1.2850, 36.8180);
+
+    List<List<double>> coordinatesOf(PolylineAnnotationOptions option) =>
+        option.geometry.coordinates
+            .map((point) => [point.lng.toDouble(), point.lat.toDouble()])
+            .toList();
+
+    bool containsPoint(List<List<double>> points, LatLng point) => points.any(
+          (p) =>
+              (p[0] - point.longitude).abs() < 1e-9 &&
+              (p[1] - point.latitude).abs() < 1e-9,
+        );
+
+    ActiveJourney journey() => ActiveJourney(
+          segments: [
+            RouteSegment.walk(
+              label: 'Walk to Stage A',
+              coordinates: [start, boarding],
+              startPoint: start,
+              endPoint: boarding,
+            ),
+            RouteSegment.matatu(
+              label: 'Ride Route 69',
+              coordinates: [boarding, rideMid, alighting],
+              routeNumber: '69',
+              startPoint: boarding,
+              endPoint: alighting,
+            ),
+            RouteSegment.walk(
+              label: 'Walk to destination',
+              coordinates: [alighting, destination],
+              startPoint: alighting,
+              endPoint: destination,
+            ),
+          ],
+          currentPosition: user,
+        );
+
+    test('keeps every remaining leg and trims geometry behind the user', () {
+      final options = PolylineRendererService.buildLiveOptions(journey());
+      final blue = options
+          .where((o) => o.lineColor == NaviColors.routeBlue.toARGB32())
+          .toList();
+
+      // Walk, final walk and ride are all still drawn after the GPS fix.
+      expect(blue, hasLength(3));
+      expect(
+        blue.map((o) => o.lineWidth).toList(),
+        [
+          PolylineRendererService.walkWidth,
+          PolylineRendererService.walkWidth,
+          PolylineRendererService.rideWidth,
+        ],
+      );
+
+      final currentWalk = coordinatesOf(blue.first);
+      expect(currentWalk.first, [user.longitude, user.latitude]);
+      expect(currentWalk.last, [boarding.longitude, boarding.latitude]);
+      expect(containsPoint(currentWalk, start), isFalse,
+          reason: 'the walked segment behind the puck is not blue any more');
+
+      final allBlue = blue.expand(coordinatesOf).toList();
+      for (final point in [boarding, rideMid, alighting, destination]) {
+        expect(containsPoint(allBlue, point), isTrue,
+            reason: 'missing a remaining point $point');
+      }
+    });
+
+    test('uses the lifted blue in dark mode', () {
+      final options =
+          PolylineRendererService.buildLiveOptions(journey(), isDark: true);
+      final blue = options
+          .where((o) => o.lineColor == NaviColors.routeBlueDark.toARGB32())
+          .toList();
+      expect(blue, hasLength(3));
+    });
+
+    test('camera geometry covers roughly the next 300 m, not the whole trip',
+        () {
+      final ahead = PolylineRendererService.pointsAhead(journey(), meters: 300);
+
+      expect(ahead.first, user);
+      expect(
+          containsPoint(ahead.map((p) => [p.longitude, p.latitude]).toList(),
+              destination),
+          isFalse);
+
+      var covered = 0.0;
+      for (var i = 1; i < ahead.length; i++) {
+        covered += nav_distance.DistanceCalculator.distanceMeters(
+          ahead[i - 1],
+          ahead[i],
+        );
+      }
+      expect(covered, greaterThan(250));
+      expect(covered, lessThanOrEqualTo(301));
     });
   });
 }

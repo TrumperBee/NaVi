@@ -10,6 +10,7 @@ import 'package:navi_app/services/pathfinding_service.dart';
 import 'package:navi_app/services/tts_service.dart';
 import 'package:navi_app/services/fare_calculator_service.dart';
 import 'package:navi_app/services/route_builder_service.dart';
+import 'package:navi_app/services/walking_directions_service.dart';
 import 'package:navi_app/data/seed_data.dart';
 
 class NavigationProvider extends ChangeNotifier {
@@ -263,20 +264,14 @@ class NavigationProvider extends ChangeNotifier {
         await _loadTransportInstructions(options.first);
         debugPrint('[NAV] instructions count=${_currentInstructions.length}');
         _remainingRoute = List.from(_routePolyline);
-        _improveRoutePolyline(); // fire-and-forget OSRM road-following
       } else {
-        debugPrint('[NAV] NO ROUTE FOUND - falling back to walking via OSRM');
-        final walkingMode = _preferWalkingPaths ? 'walking' : 'driving';
-        final route = await _navigationService.getOSRMRoute(
-          _startPoint!,
-          _endPoint!,
-          mode: walkingMode,
-        );
-        final points = (route['points'] as List).cast<LatLng>();
-        _routePolyline = points;
+        debugPrint('[NAV] NO ROUTE FOUND - falling back to walking directions');
+        final walk = await RouteBuilderService.walkingDirections
+            .route(_startPoint!, _endPoint!);
+        _routePolyline = List<LatLng>.of(walk.points);
         _remainingRoute = List.from(_routePolyline);
-        await _loadWalkingInstructions(route);
-        _selectedPath = _buildWalkingPathOption(route);
+        _loadWalkingInstructions(walk);
+        _selectedPath = _buildWalkingPathOption(walk);
       }
     } catch (e, s) {
       debugPrint('[NAV] Route calculation error: $e\n$s');
@@ -294,21 +289,10 @@ class NavigationProvider extends ChangeNotifier {
     if (_endPoint != null) _routePolyline.add(_endPoint!);
   }
 
-  // Try to improve polyline with OSRM road-following geometry
-  Future<void> _improveRoutePolyline() async {
-    final waypoints = List<LatLng>.from(_routePolyline);
-    if (waypoints.length < 2) return;
-    try {
-      final mode = _preferWalkingPaths ? 'walking' : 'driving';
-      final route = await _navigationService.getMultiSegmentRoute(waypoints, mode: mode);
-      final points = route['points'] as List;
-      if (points.length > waypoints.length) {
-        _routePolyline = List<LatLng>.from(points);
-        _remainingRoute = List.from(_routePolyline);
-        notifyListeners();
-      }
-    } catch (_) {}
-  }
+  // OSRM road-following pass removed: walking legs are resolved against the
+  // road network by WalkingDirectionsService inside RouteBuilderService, and
+  // the ride legs already carry corridor geometry. Re-routing the whole
+  // stitched polyline through a car profile produced the out-and-back spikes.
 
   Future<void> _loadTransportInstructions(PathOption option) async {
     final instructions = await _navigationService.getTransportInstructions(
@@ -320,29 +304,38 @@ class NavigationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _loadWalkingInstructions(Map<String, dynamic> route) async {
-    final points = (route['points'] as List).cast<LatLng>();
-    final steps = (route['steps'] as List).cast<Map<String, dynamic>>();
-    _currentInstructions = steps.map((s) {
-      final dist = (s['distance'] as num).toDouble();
-      final dur = (s['duration'] as num).toDouble();
-      return InstructionStep(
-        instruction: '${s['instruction'] ?? 'Walk'} ${_navigationService.formatDistance(dist)}',
-        distance: dist,
-        duration: dur.round(),
+  void _loadWalkingInstructions(WalkingRoute walk) {
+    final start = walk.points.first;
+    final end = walk.points.last;
+    _currentInstructions = [
+      InstructionStep(
+        instruction:
+            'Walk to ${_endName ?? 'your destination'} ${_navigationService.formatDistance(walk.distanceMeters)}',
+        distance: walk.distanceMeters,
+        duration: walk.durationSeconds.round(),
         type: 'walk',
         icon: '🚶',
-        startNode: Node(id: 'start', name: _currentStreet, lat: points.first.latitude, lng: points.first.longitude, type: 'temporary'),
-        endNode: Node(id: 'dest_end', name: _endName ?? 'Destination', lat: points.last.latitude, lng: points.last.longitude, type: 'temporary'),
-      );
-    }).toList();
+        startNode: Node(
+            id: 'start',
+            name: _currentStreet,
+            lat: start.latitude,
+            lng: start.longitude,
+            type: 'temporary'),
+        endNode: Node(
+            id: 'dest_end',
+            name: _endName ?? 'Destination',
+            lat: end.latitude,
+            lng: end.longitude,
+            type: 'temporary'),
+      ),
+    ];
     _currentInstructionIndex = 0;
     notifyListeners();
   }
 
-  PathOption _buildWalkingPathOption(Map<String, dynamic> route) {
-    final distance = (route['distance'] as num).toDouble();
-    final duration = (route['duration'] as num).toDouble();
+  PathOption _buildWalkingPathOption(WalkingRoute walk) {
+    final distance = walk.distanceMeters;
+    final duration = walk.durationSeconds;
     final startNode = Node(id: 'start', name: _currentStreet, lat: _startPoint!.latitude, lng: _startPoint!.longitude, type: 'temporary');
     final endNode = Node(id: 'dest', name: _endName ?? 'Destination', lat: _endPoint!.latitude, lng: _endPoint!.longitude, type: 'temporary');
     final edge = Edge(
@@ -413,7 +406,6 @@ class NavigationProvider extends ChangeNotifier {
     }
     
     notifyListeners();
-    _improveRoutePolyline(); // fire-and-forget OSRM road-following
   }
 
   void clearNavigation() {

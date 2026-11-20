@@ -95,6 +95,18 @@ class ActiveNavData {
 
   // ==================== SUMMARY ====================
 
+  /// True when any leg is a straight-line fallback (walking directions were
+  /// unavailable), so the panel shows "Approximate route".
+  bool get isApproximate => journey.hasApproximateSegment;
+
+  /// Only show a fare row when a real calculator estimate exists. Pure walks
+  /// resolve to KSh 0 and are intentionally treated as "unknown / no fare".
+  bool get hasFare => journey.fareTotalKsh > 0;
+
+  /// The fare row copy, sourced from the fare calculator estimates stamped on
+  /// each leg by the route builder (`RouteSegment.fareEstimate`).
+  String get fareLabel => 'Fare KSh ${journey.fareTotalKsh}';
+
   /// Remaining time, rounded up so "40 s left" never reads "0 min" while the
   /// traveller is still moving.
   Duration get remainingDuration => journey.remainingDuration;
@@ -175,8 +187,28 @@ class ActiveNavData {
       kind: NavBannerKind.walk,
       icon: Icons.directions_walk,
       title: title,
+      subtitle: _nextActionSubtitle(segment),
       trailing: _distanceLabel(_distanceToSegmentEnd(segment)),
     );
+  }
+
+  /// Honest second line for a walk leg: the next real action from the journey
+  /// model. A matatu leg with a route number reads "Then board Route 69"; no
+  /// road names or intermediate stops are invented.
+  String? _nextActionSubtitle(RouteSegment segment) {
+    final index = journey.segments.indexOf(segment);
+    if (index < 0 || index + 1 >= journey.segments.length) return null;
+    final next = journey.segments[index + 1];
+
+    if (next.mode == SegmentMode.matatu) {
+      final route = (next.routeNumber ?? '').trim();
+      if (route.isNotEmpty) return 'Then board Route $route';
+      final stage = _stageName(next.fromStageId) ?? _labelTarget(next.label);
+      return stage == null ? 'Then board a matatu' : 'Then board at $stage';
+    }
+
+    final target = _stageName(next.fromStageId) ?? _labelTarget(next.label);
+    return target == null ? 'Then keep walking' : 'Then walk to $target';
   }
 
   /// Wording for a walk leg: the leg label (coordinate-guarded), or the

@@ -22,6 +22,12 @@ class ActiveJourney {
 
   bool get isComplete => currentSegmentIndex >= segments.length;
 
+  /// True when any leg was drawn from a straight-line fallback instead of a
+  /// real road route (see [RouteSegment.approximate]). Both Route Preview and
+  /// Active Navigation surface this as "Approximate route".
+  bool get hasApproximateSegment =>
+      segments.any((segment) => segment.approximate);
+
   double get totalDistanceMeters {
     return segments.fold(0.0, (sum, s) => sum + s.distanceMeters);
   }

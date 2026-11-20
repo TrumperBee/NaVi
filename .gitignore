@@ -50,14 +50,9 @@ ios/Runner/GoogleService-Info.plist
 lib/firebase_options.dart
 
 # Local build secrets - never commit. See docs/BUILD_SETUP.md.
-# Mapbox tokens / Android signing / Flutter --dart-define-from-file.
+# Android signing and Flutter --dart-define-from-file.
 # (android/.gitignore also covers android/local.properties and android/key.properties.)
 /local.properties
 /key.properties
 /android/key.properties
-/mapbox_token.json
-/.mapbox_token.json
-
-# Local Mapbox token fallback for plain `flutter run` / `flutter build apk`.
-# The tracked template is lib/config/mapbox_secrets.example.dart.
-/lib/config/mapbox_secrets.dart
+/dart_defines.json

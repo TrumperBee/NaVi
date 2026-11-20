@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
-import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' show MapboxOptions;
 import 'package:navi_app/services/mapbox_config.dart';
 
 class GeocodingResult {
@@ -69,7 +68,8 @@ enum GeocodingErrorType {
 }
 
 class GeocodingService {
-  static const String _baseUrl = 'https://api.mapbox.com/geocoding/v5/mapbox.places';
+  static const String _baseUrl =
+      'https://api.mapbox.com/geocoding/v5/mapbox.places';
 
   /// Soft bias point (Nairobi CBD). Mapbox `proximity` RANKS nearby results
   /// higher without hard-restricting, which is exactly what the product wants:
@@ -89,39 +89,23 @@ class GeocodingService {
   })  : _accessToken = accessToken ?? MapboxConfig.accessToken,
         _client = client ?? http.Client();
 
-  String? _fallbackToken;
-
-  /// The token to hit the API with. [MapboxConfig.accessToken] already
-  /// resolves the `--dart-define` value, then the local
-  /// `lib/config/mapbox_secrets.dart` fallback, so this normally never runs
-  /// empty. As a last resort it reads the native manifest token that Gradle
-  /// filled in, instead of firing requests with an empty token.
-  Future<String> _token() async {
-    if (_accessToken.isNotEmpty) return _accessToken;
-    if (_fallbackToken != null) return _fallbackToken!;
-    try {
-      _fallbackToken = await MapboxOptions.getAccessToken();
-    } catch (_) {
-      _fallbackToken = '';
-    }
-    return _fallbackToken!;
-  }
-
   Future<GeocodingResult> geocode(String query) async {
     final results = await geocodeMultiple(query, limit: 1);
     if (results.isEmpty) {
-      throw const GeocodingError('No results found', GeocodingErrorType.noResults);
+      throw const GeocodingError(
+          'No results found', GeocodingErrorType.noResults);
     }
     return results.first;
   }
 
   /// Forward-geocodes [query] against Mapbox, biased to Nairobi but never
   /// hard-restricted to the metro box. Returns up to [limit] results.
-  Future<List<GeocodingResult>> geocodeMultiple(String query, {int limit = 5}) async {
+  Future<List<GeocodingResult>> geocodeMultiple(String query,
+      {int limit = 5}) async {
     if (query.trim().isEmpty) return [];
 
     final encodedQuery = Uri.encodeComponent(query.trim());
-    final token = await _token();
+    final token = _accessToken;
     final url = Uri.parse(
       '$_baseUrl/$encodedQuery.json'
       '?proximity=$_nairobiProximity'
@@ -145,7 +129,7 @@ class GeocodingService {
       {int limit = 1}) async {
     final lng = coordinate.longitude.toStringAsFixed(6);
     final lat = coordinate.latitude.toStringAsFixed(6);
-    final token = await _token();
+    final token = _accessToken;
     final url = Uri.parse(
       '$_baseUrl/$lng,$lat.json'
       '?access_token=$token'
@@ -170,14 +154,15 @@ class GeocodingService {
     http.Response? lastResponse;
     for (int attempt = 1; attempt <= _maxRetries; attempt++) {
       try {
-        lastResponse = await _client
-            .get(url, headers: {'User-Agent': 'NaViNairobi/1.0'})
-            .timeout(Duration(seconds: _timeoutSeconds));
+        lastResponse = await _client.get(url, headers: {
+          'User-Agent': 'NaViNairobi/1.0'
+        }).timeout(Duration(seconds: _timeoutSeconds));
 
         if (lastResponse.statusCode == 200) {
           break;
         } else if (lastResponse.statusCode == 429) {
-          throw const GeocodingError('Rate limited', GeocodingErrorType.rateLimited);
+          throw const GeocodingError(
+              'Rate limited', GeocodingErrorType.rateLimited);
         }
 
         if (attempt < _maxRetries) {
@@ -185,7 +170,8 @@ class GeocodingService {
         }
       } on TimeoutException {
         if (attempt >= _maxRetries) {
-          throw const GeocodingError('Request timeout', GeocodingErrorType.timeout);
+          throw const GeocodingError(
+              'Request timeout', GeocodingErrorType.timeout);
         }
         await Future.delayed(Duration(seconds: attempt));
       } on GeocodingError {
@@ -201,9 +187,11 @@ class GeocodingService {
     if (lastResponse == null || lastResponse.statusCode != 200) {
       final status = lastResponse?.statusCode ?? 'no response';
       if (status == 429) {
-        throw const GeocodingError('Rate limited', GeocodingErrorType.rateLimited);
+        throw const GeocodingError(
+            'Rate limited', GeocodingErrorType.rateLimited);
       }
-      throw GeocodingError('Geocoding failed with status $status', GeocodingErrorType.invalidResponse);
+      throw GeocodingError('Geocoding failed with status $status',
+          GeocodingErrorType.invalidResponse);
     }
 
     final data = json.decode(lastResponse.body) as Map<String, dynamic>;

@@ -76,15 +76,28 @@ class NavigationOverlay extends StatefulWidget {
   /// The sheet's maximum height, leaving the banner visible.
   static const double maxExtent = 0.80;
 
-  /// Panel height the collapsed content needs: handle + summary + the current
-  /// step and the next two + the fixed action row.
-  static const double collapsedContentPx = 288;
+  /// Content the collapsed sheet actually renders: handle + summary + three
+  /// timeline rows + End Journey. The fare/approximate rows and the system
+  /// bottom inset are added by the caller when present.
+  static const double collapsedContentPx = 296;
+  static const double fareRowPx = 40;
+  static const double approximateNotePx = 19;
 
-  /// The sheet opens at 42% of the screen, raised on short screens so the
-  /// collapsed content (three timeline rows + actions) is never clipped.
-  static double initialExtentFor(Size size) {
-    if (size.height <= 0) return 0.42;
-    return (collapsedContentPx / size.height).clamp(0.42, 0.62).toDouble();
+  /// Opens exactly tall enough to show summary → current + next two → fare →
+  /// End Journey. Taller phones therefore give the map more room instead of
+  /// leaving an empty scroll viewport above the button.
+  static double initialExtentFor(
+    Size size, {
+    double bottomInset = 0,
+    bool hasFare = false,
+    bool isApproximate = false,
+  }) {
+    if (size.height <= 0) return 0.40;
+    final content = collapsedContentPx +
+        bottomInset +
+        (hasFare ? fareRowPx : 0) +
+        (isApproximate ? approximateNotePx : 0);
+    return (content / size.height).clamp(0.28, 0.62).toDouble();
   }
 
   /// Above this extent the panel shows every step (plus the stop rows).
@@ -127,7 +140,13 @@ class _NavigationOverlayState extends State<NavigationOverlay> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
-        final initial = NavigationOverlay.initialExtentFor(size);
+        final bottomInset = MediaQuery.paddingOf(context).bottom;
+        final initial = NavigationOverlay.initialExtentFor(
+          size,
+          bottomInset: bottomInset,
+          hasFare: data.hasFare,
+          isApproximate: data.isApproximate,
+        );
         final extent = (_extent ?? initial)
             .clamp(NavigationOverlay.minExtent, NavigationOverlay.maxExtent)
             .toDouble();

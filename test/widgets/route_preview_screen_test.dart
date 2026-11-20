@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' hide TimeOfDay;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart' hide DistanceCalculator;
+import 'package:navi_app/design/navi_marker_theme.dart';
 import 'package:navi_app/models/active_journey.dart';
 import 'package:navi_app/models/fare_estimate.dart';
 import 'package:navi_app/models/route_segment.dart';
@@ -184,6 +185,48 @@ void main() {
     expect(started, isTrue);
   });
 
+  testWidgets('destination mode: an approximate walk shows the small note',
+      (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final option = _option(
+      routeNumbers: const ['34'],
+      totalTime: 1740,
+      totalFare: 60,
+      description: 'Makadara Stage  Utawala',
+    );
+    final journey = ActiveJourney(segments: [
+      RouteSegment.walk(
+        label: 'Walk to Makadara Stage',
+        coordinates: const [_origin, _boarding],
+        startPoint: _origin,
+        endPoint: _boarding,
+        approximate: true,
+      ),
+      RouteSegment.matatu(
+        label: 'Ride Route 34 to Utawala',
+        coordinates: const [_boarding, _alight],
+        routeNumber: '34',
+        startPoint: _boarding,
+        endPoint: _alight,
+        fromStageId: 'makadara',
+        toStageId: 'utawala',
+      ),
+    ]);
+
+    await tester.pumpWidget(_wrap(_screen(
+      mode: RoutePreviewMode.destination,
+      journey: journey,
+      selectedPath: option,
+      pathOptions: [option],
+    )));
+    await tester.pump();
+
+    expect(find.text('Approximate route'), findsOneWidget);
+  });
+
   testWidgets('destination mode: alternative routes switch the preview',
       (tester) async {
     tester.view.physicalSize = const Size(412, 915);
@@ -242,6 +285,11 @@ void main() {
     addTearDown(tester.view.reset);
 
     final stage = _stage('makadara', 'Makadara Stage');
+    final journey = _walkJourney();
+    final walkMinutes = (journey.walkDuration.inSeconds / 60).round();
+    final banner =
+        'About $walkMinutes min to reach this stage. '
+        'Matatus from here are listed below.';
     final option = _option(
       routeNumbers: const ['walk'],
       totalTime: 780,
@@ -251,7 +299,7 @@ void main() {
 
     await tester.pumpWidget(_wrap(_screen(
       mode: RoutePreviewMode.stage,
-      journey: _walkJourney(),
+      journey: journey,
       selectedPath: option,
       stage: stage,
       stageRoutes: const [
@@ -273,6 +321,9 @@ void main() {
 
     expect(find.text('Walking'), findsOneWidget);
     expect(find.text('Walk to Makadara Stage'), findsWidgets);
+    expect(find.text(banner), findsOneWidget);
+    // The full two-line banner must not overflow on a 360dp screen.
+    expect(tester.takeException(), isNull);
     expect(find.text('Start Journey'), findsOneWidget);
 
     // No ride metric and no destination-mode alternatives.
@@ -280,7 +331,13 @@ void main() {
     expect(find.textContaining('Board at'), findsNothing);
     expect(find.textContaining('stops'), findsNothing);
 
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, -500));
+    // The upward drag expands the draggable sheet; jump the list itself to the
+    // end so the assertion checks the scroll padding, not the sheet gesture.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+    await tester.pumpAndSettle();
+    final scrollState =
+        tester.state<ScrollableState>(find.byType(Scrollable).first);
+    scrollState.position.jumpTo(scrollState.position.maxScrollExtent);
     await tester.pumpAndSettle();
     expect(find.text('Routes from this stage'), findsOneWidget);
     expect(find.text('Route 58'), findsOneWidget);
@@ -288,5 +345,41 @@ void main() {
     expect(
         find.text('A matatu comes every 5-15 min right now'), findsOneWidget);
     expect(find.text(StageRouteSummaries.noFrequencyText), findsOneWidget);
+
+    // The last card still has the full system inset + 24dp scroll padding
+    // below it, so neither the rounded sheet edge nor the gesture bar clips it.
+    final lastCard = find.byKey(const Key('stageRouteCard_34'));
+    expect(lastCard, findsOneWidget);
+    expect(
+      tester.getBottomRight(lastCard).dy,
+      lessThanOrEqualTo(640 - 24 + 1),
+    );
+  });
+
+  testWidgets('route preview publishes ambient brightness to marker chips',
+      (tester) async {
+    addTearDown(() => NaviMarkerTheme.isDark = false);
+    final option = _option(
+      routeNumbers: const ['walk'],
+      totalTime: 780,
+      totalFare: 0,
+      description: 'Walk to Makadara Stage',
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
+      home: Scaffold(
+        body: _screen(
+          mode: RoutePreviewMode.stage,
+          journey: _walkJourney(),
+          selectedPath: option,
+          stage: _stage('makadara', 'Makadara Stage'),
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    expect(NaviMarkerTheme.isDark, isTrue);
+    expect(NaviMarkerTheme.chipBackground, const Color(0xFF2B3037));
   });
 }

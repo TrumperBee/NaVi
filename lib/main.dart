@@ -22,6 +22,8 @@ import 'core/constants.dart';
 import 'core/theme.dart';
 import 'services/database/local_storage_service.dart';
 import 'services/gtfs_import_service.dart';
+import 'services/mapbox_config.dart';
+import 'widgets/mapbox_token_debug_banner.dart';
 
 import 'models/transport_models.dart';
 import 'features/settings/settings_screen.dart';
@@ -30,6 +32,7 @@ import 'features/community/screens/community_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MapboxConfig.logMissingTokenIfNeeded();
 
   try {
     await Firebase.initializeApp();
@@ -80,9 +83,13 @@ class MyApp extends StatelessWidget {
             title: AppConstants.appName,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
-            themeMode:
-                settings.isDarkTheme ? ThemeMode.dark : ThemeMode.light,
+            themeMode: settings.isDarkTheme ? ThemeMode.dark : ThemeMode.light,
             debugShowCheckedModeBanner: false,
+            builder: (context, child) {
+              return MapboxTokenDebugBanner(
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             home: StreamBuilder<User?>(
               stream: FirebaseAuth.instance.authStateChanges(),
               builder: (context, snapshot) {

@@ -58,6 +58,14 @@ class RoutePreviewData {
   /// Fare range, only when the calculator produced a ride fare (> 0).
   final String? fareLabel;
 
+  /// True when at least one leg was drawn as a straight-line fallback because
+  /// walking directions were unavailable. The sheet shows "Approximate route".
+  final bool approximateRoute;
+
+  /// Stage mode only: real minutes to reach the stage, rounded exactly like the
+  /// metric chip so the banner and the header never disagree.
+  final int? stageWalkMinutes;
+
   const RoutePreviewData({
     required this.title,
     required this.subtitle,
@@ -69,6 +77,8 @@ class RoutePreviewData {
     required this.rideCount,
     required this.boardingStageName,
     required this.fareLabel,
+    this.approximateRoute = false,
+    this.stageWalkMinutes,
   });
 
   bool get hasRide => rideCount > 0;
@@ -79,6 +89,16 @@ class RoutePreviewData {
   /// cannot be named (the banner is then omitted rather than invented).
   String? get boardingText =>
       boardingStageName == null ? null : 'Board at $boardingStageName';
+
+  /// Stage-mode banner. Deliberately does NOT repeat the sheet title
+  /// ("Walk to Makadara Stage") — it says how long the walk takes and points
+  /// at the route list below instead.
+  String? get stageBannerText {
+    final minutes = stageWalkMinutes;
+    if (minutes == null) return null;
+    return 'About $minutes min to reach this stage. '
+        'Matatus from here are listed below.';
+  }
 
   factory RoutePreviewData.fromJourney({
     required ActiveJourney journey,
@@ -206,6 +226,13 @@ class RoutePreviewData {
             ? _fareRangeLabel(journey)
             : null;
 
+    final walkSeconds = journey.walkDuration.inSeconds;
+    final stageWalkMinutes = stageMode && walkSeconds > 0
+        ? (walkSeconds ~/ 60 + (walkSeconds % 60 >= 30 ? 1 : 0))
+            .clamp(1, 999)
+            .toInt()
+        : null;
+
     return RoutePreviewData(
       title: title,
       subtitle: subtitle,
@@ -218,6 +245,8 @@ class RoutePreviewData {
       rideCount: stageMode ? 0 : rideIndices.length,
       boardingStageName: stageMode ? null : boardingStageName,
       fareLabel: fareLabel,
+      approximateRoute: journey.hasApproximateSegment,
+      stageWalkMinutes: stageWalkMinutes,
     );
   }
 

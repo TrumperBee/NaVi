@@ -31,6 +31,7 @@ import '../features/map/mapbox_layers.dart';
 import '../features/map/map_journey_overlay.dart';
 import '../features/journey/models/journey_models.dart';
 import '../design/navi_colors.dart';
+import '../design/navi_system_ui.dart';
 import '../design/navi_typography.dart';
 import '../widgets/hero_go_card.dart';
 import '../widgets/homepage_entrance_animation.dart';
@@ -68,8 +69,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final TtsService _ttsService = TtsService();
   late final ActiveJourneyViewModel _activeJourneyVM;
 
-  /// Renders the segmented confirmed-route polyline (dashed green walk,
-  /// solid blue matatu) on the shared map manager.
+  /// Renders the confirmed-route polyline with the app's one solid route
+  /// style (blue ride, slightly lighter-weight blue walks, white casing).
   late final PolylineRendererService _polylineRenderer =
       PolylineRendererService(_mapManager);
 
@@ -178,7 +179,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _sheetSwipeHintVisible = false;
   bool _sheetDragListenerAttached = false;
   ScrollController? _sheetScrollController;
-  bool _overlayStyleSyncedForDark = false;
+  bool? _overlayStyleSyncedForDark;
   static const String _sheetSwipeHintKey = 'navi.hints.sheetSwipeShown';
 
   double _currentZoom = _initialZoom;
@@ -298,15 +299,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Keeps the status bar icons legible against the map style: dark icons over
   /// the light (day) map, light icons over the dark (night) map. The map stays
-  /// edge-to-edge, so only the overlay style is set here — not a safe-area.
+  /// edge-to-edge, so only the overlay style is set here - not a safe-area.
+  ///
+  /// Returns early only once the requested style is already the applied one;
+  /// the field starts as null so the very first frame applies it (an initial
+  /// `false` would silently leave a light-mode cold start on the platform
+  /// default, i.e. white icons on a white map).
   void _syncSystemUiOverlay(bool isDark) {
     if (_overlayStyleSyncedForDark == isDark) return;
     _overlayStyleSyncedForDark = isDark;
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-      statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(naviSystemUiOverlayStyle(isDark));
   }
 
   void _wireProximityAlerts() {
@@ -717,18 +719,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _mapManager.clearAll();
     if (preTrip) {
       // Pre-trip overview: the Route Preview owns every annotation — the
-      // emerald/dashed line, the blue user dot, the green boarding pin and the
-      // red destination pin (all with label chips). This call only exists to
-      // wipe whatever the home layers left behind; [_applyPreTripMarkers]
+      // solid blue route line, the blue user dot, the green boarding pin and
+      // the red destination pin (all with label chips). This call only exists
+      // to wipe whatever the home layers left behind; [_applyPreTripMarkers]
       // redraws the preview set straight after.
       return;
     }
     if (routePolyline.isNotEmpty || remainingRoute.isNotEmpty) {
       // The PolylineRendererService has rendered (or will render) the
-      // journey line — both for a confirmed pre-trip preview (segmented
-      // dashed/solid polyline) and during active navigation. The raw OSRM
-      // route is only drawn when no renderer-owned journey is on screen,
-      // otherwise its single-colour line overlaps the stitched route.
+      // journey line — both for a confirmed pre-trip preview (one solid blue
+      // route style) and during active navigation. The raw provider route is
+      // only drawn when no renderer-owned journey is on screen, otherwise its
+      // single-colour line overlaps the journey route.
       final rendererOwnsLine = _confirmedJourney != null || journey.isActive;
       if (!rendererOwnsLine) {
         MapboxLayers.setRoutePolylines(
@@ -851,8 +853,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ///
   /// Runs exactly once per (destination, route) selection (keyed by
   /// [_confirmedRouteKey]) after the provider has produced a [PathOption], and
-  /// both renders the segmented dashed-green/solid-blue polyline and feeds the
-  /// top summary card and bottom metrics row — one source of truth.
+  /// both renders the solid blue journey polyline and feeds the top summary
+  /// card and bottom metrics row — one source of truth.
   Future<void> _ensureConfirmedRoute(
       NavigationProvider nav, PathOption path) async {
     final endPoint = nav.endPoint;
@@ -908,7 +910,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         for (final segment in journey.segments) ...segment.coordinates,
       ], padding: _previewMapPadding());
       await _mapManager
-          .setPolylineAnnotations(RoutePreviewPolyline.build(journey));
+          .setPolylineAnnotations(RoutePreviewPolyline.build(journey,
+              isDark: settings.isDarkTheme));
       _applyPreTripMarkers();
     } catch (e) {
       debugPrint('[NAV] Confirmed route build failed: $e');
@@ -1039,6 +1042,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
     _syncSystemUiOverlay(settings.isDarkTheme);
+    // Keep the shared route renderer in the same theme as the map style, so a
+    // light/dark switch repaints the line without waiting for a map rebuild.
+    _polylineRenderer.isDark = settings.isDarkTheme;
+    _activeJourneyVM.setDarkMode(settings.isDarkTheme);
     return ChangeNotifierProvider<ActiveJourneyViewModel>.value(
       value: _activeJourneyVM,
       child: Consumer2<NavigationProvider, JourneyProvider>(
@@ -1204,55 +1211,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               !(isNavigating && nav.endName != null);
           if (!showPreTrip && !_showSearch) _scheduleHeaderMeasure();
 
-          return HomepageEntranceAnimation(
-            builder: (context, mapAnim, topAnim, sheetAnim) {
-              final topSlide = Tween<Offset>(
-                begin: const Offset(0, -1),
-                end: Offset.zero,
-              ).animate(topAnim);
+          // The status-bar style is owned here in one annotated region, so it
+          // follows the active theme on all three screens (Home, Route
+          // Preview, Active Navigation - they are one route) and is restored
+          // when a pushed screen or dialog pops back onto the map.
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: naviSystemUiOverlayStyle(settings.isDarkTheme),
+            child: HomepageEntranceAnimation(
+              builder: (context, mapAnim, topAnim, sheetAnim) {
+                final topSlide = Tween<Offset>(
+                  begin: const Offset(0, -1),
+                  end: Offset.zero,
+                ).animate(topAnim);
 
-              return Scaffold(
-                backgroundColor: NaviColors.canvas(
-                    Theme.of(context).brightness == Brightness.dark),
-                bottomNavigationBar: showActiveNav || showPreTrip
-                    ? null
-                    : (_showSearch
-                        ? null
-                        : HomeBottomNav(
-                            selectedIndex: 0,
-                            onSelected: _onTabSelected,
-                          )),
-                body: showActiveNav
-                    ? NavigationOverlay(
-                        map: _buildMapZoneWidget(
-                          context,
-                          settings,
-                          nav,
-                          journey,
-                          currentPosition,
-                          endPoint,
-                          routePolyline,
-                          traveledRoute,
-                          remainingRoute,
-                          mapAnim,
-                          isJourneyActive: _activeJourneyVM.isJourneyActive,
-                        ),
-                        journey: _activeJourneyVM.activeJourney!,
-                        stages: _allStages,
-                        extras: _liveTripExtras,
-                        proximityMessage: _proximityMessage,
-                        onDismissProximity: _clearProximityMessage,
-                        voiceGuidanceEnabled: settings.voiceGuidanceEnabled,
-                        onToggleVoiceGuidance: settings.setVoiceGuidanceEnabled,
-                        onEndTrip: _endActiveTrip,
-                        onZoomIn: _zoomIn,
-                        onZoomOut: _zoomOut,
-                        onResetBearing: _resetBearing,
-                      )
-                    : Stack(
-                        children: [
-                          // --- FULL-SCREEN MAP (entrance: fades in first) ---
-                          _buildMapZoneWidget(
+                return Scaffold(
+                  backgroundColor: NaviColors.canvas(
+                      Theme.of(context).brightness == Brightness.dark),
+                  bottomNavigationBar: showActiveNav || showPreTrip
+                      ? null
+                      : (_showSearch
+                          ? null
+                          : HomeBottomNav(
+                              selectedIndex: 0,
+                              onSelected: _onTabSelected,
+                            )),
+                  body: showActiveNav
+                      ? NavigationOverlay(
+                          map: _buildMapZoneWidget(
                             context,
                             settings,
                             nav,
@@ -1263,218 +1248,254 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             traveledRoute,
                             remainingRoute,
                             mapAnim,
-                            isJourneyActive: false,
+                            isJourneyActive: _activeJourneyVM.isJourneyActive,
                           ),
-
-                          // --- NEARBY STAGES SHEET (home only). Sits under the header
-                          // in paint order so a very short screen never hides its drag
-                          // handle. Entrance: slides up from below. ---
-                          if (showsNearbySheet)
-                            Positioned.fill(
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0, 1),
-                                  end: Offset.zero,
-                                ).animate(sheetAnim),
-                                child: FadeTransition(
-                                  opacity: sheetAnim,
-                                  child: NearbyStagesSheet(
-                                    initialSize: minSheetExtent,
-                                    minSize: minSheetExtent,
-                                    maxSize: 0.85,
-                                    status: nearbyStatus,
-                                    entries: nearbyInRange,
-                                    distanceUnit: settings.distanceUnit,
-                                    onStageTap: (stage) => _showStageDetails(
-                                      stage,
-                                      userPosition: currentPosition,
-                                    ),
-                                    onSizeChanged: _onSheetExtentChanged,
-                                    onEnableLocation:
-                                        _requestLocationPermission,
-                                    onOpenSettings: _openLocationSettings,
-                                    permanentlyDenied:
-                                        _locationPermanentlyDenied,
-                                    onRetry: _requestLocationPermission,
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          // --- TOP FLOATING HEADER PANEL: brand + avatar, search
-                          // + locate, Quick Go and the four shortcut tiles.
-                          // The Route Preview draws its own back + "Route
-                          // Details" bar, and the search overlay replaces the
-                          // panel while open. Entrance: slides down from above.
-                          if (!showPreTrip)
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              child: SlideTransition(
-                                position: topSlide,
-                                child: FadeTransition(
-                                  opacity: topAnim,
-                                  child: SafeArea(
-                                    bottom: false,
-                                    child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                          16, 8, 16, 0),
-                                      child: _showSearch
-                                          ? const SizedBox.shrink()
-                                          : Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.stretch,
-                                              children: [
-                                                HomeHeaderPanel(
-                                                  key: _headerPanelKey,
-                                                  userInitial: _userInitial,
-                                                  onAvatarTap: _openProfile,
-                                                  onSearchTap: _toggleSearch,
-                                                  onLocateTap: () =>
-                                                      _recenterOnUser(nav),
-                                                  onSeeAllQuickGo:
-                                                      _openSavedPlacesSheet,
-                                                  destinations:
-                                                      _savedDestinations,
-                                                  onDestinationTap:
-                                                      (destination) =>
-                                                          _startNavigation(
-                                                    destination.label,
-                                                    LatLng(destination.latitude,
-                                                        destination.longitude),
-                                                  ),
-                                                  onDestinationLongPress:
-                                                      _onAddFavorite,
-                                                  onSetDestination:
-                                                      _onAddFavorite,
-                                                  onSavedTap:
-                                                      _openSavedPlacesSheet,
-                                                ),
-                                              ],
-                                            ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          // --- SEARCH OVERLAY ---
-                          if (_showSearch)
-                            Positioned(
-                              top: MediaQuery.of(context).padding.top + 8,
-                              left: 16,
-                              right: 16,
-                              bottom: MediaQuery.of(context).size.height * 0.4,
-                              child: _buildSearchSection(context, nav),
-                            ),
-
-                          // --- MAP CONTROLS (right edge, 16dp above the sheet top).
-                          // Hidden when the sheet is expanded past 60% height, and
-                          // during the Route Preview, which brings its own re-fit
-                          // button. ---
-                          if (!_showSearch && !showPreTrip)
-                            ValueListenableBuilder<double>(
-                              valueListenable: _sheetExtent,
-                              builder: (context, rawExtent, _) {
-                                final extent =
-                                    rawExtent > 0 ? rawExtent : minSheetExtent;
-                                if (extent > 0.60) {
-                                  return const SizedBox.shrink();
-                                }
-                                // Above the Home nearby sheet, or above the
-                                // existing destination sheet (its initial
-                                // 0.35 extent) in the navigating state.
-                                final destinationSheet = !showPreTrip &&
-                                    isNavigating &&
-                                    nav.endName != null;
-                                final anchoredHeight = showsNearbySheet
-                                    ? safeBodyHeight * extent + 16
-                                    : (destinationSheet
-                                        ? safeBodyHeight * 0.35 + 16
-                                        : media.padding.bottom + 16);
-                                return Positioned(
-                                  right: 16,
-                                  bottom: anchoredHeight,
-                                  child: FadeTransition(
-                                    opacity: mapAnim,
-                                    child: HomeMapControls(
-                                      satellite: _satelliteEnabled,
-                                      onToggleLayers: _toggleMapStyle,
-                                      onZoomIn: _zoomIn,
-                                      onZoomOut: _zoomOut,
-                                      onRecenter: () => _recenterOnUser(nav),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-
-                          // --- DESTINATION SHEET: the existing destination / route
-                          // panel, kept only for the pre-journey navigating state.
-                          // The Home state above uses the Nearby Stages sheet. ---
-                          if (!_showJourneyPanel &&
-                              !showPreTrip &&
-                              isNavigating &&
-                              nav.endName != null)
-                            _buildBottomSheet(
+                          journey: _activeJourneyVM.activeJourney!,
+                          stages: _allStages,
+                          extras: _liveTripExtras,
+                          proximityMessage: _proximityMessage,
+                          onDismissProximity: _clearProximityMessage,
+                          voiceGuidanceEnabled: settings.voiceGuidanceEnabled,
+                          onToggleVoiceGuidance:
+                              settings.setVoiceGuidanceEnabled,
+                          onEndTrip: _endActiveTrip,
+                          onZoomIn: _zoomIn,
+                          onZoomOut: _zoomOut,
+                          onResetBearing: _resetBearing,
+                        )
+                      : Stack(
+                          children: [
+                            // --- FULL-SCREEN MAP (entrance: fades in first) ---
+                            _buildMapZoneWidget(
                               context,
+                              settings,
                               nav,
                               journey,
                               currentPosition,
-                              selectedPath,
-                              pathOptions,
-                              settings,
-                              sheetAnim,
-                              preTripSummary,
+                              endPoint,
+                              routePolyline,
+                              traveledRoute,
+                              remainingRoute,
+                              mapAnim,
+                              isJourneyActive: false,
                             ),
 
-                          // --- ROUTE PREVIEW: replaces the old pre-trip card
-                          // and the "To …" header. The map stays underneath
-                          // (same MapWidget instance); this layer owns only the
-                          // back bar, the re-fit button and the sheet. ---
-                          if (showPreTrip)
-                            Positioned.fill(
-                              child: RoutePreviewScreen(
-                                mode: _previewStage != null
-                                    ? RoutePreviewMode.stage
-                                    : RoutePreviewMode.destination,
-                                journey: _confirmedJourney,
-                                selectedPath: selectedPath,
-                                pathOptions: pathOptions,
-                                stages: _allStages,
-                                extras: _previewExtras,
-                                stage: _previewStage,
-                                stageRoutes: _previewStageRoutes,
-                                destinationLabel: nav.endName ?? 'Destination',
-                                loading: preTripLoading,
-                                error: preTripError,
-                                onBack: () => nav.clearNavigation(),
-                                onStartJourney: () =>
-                                    _startJourney(nav, journey),
-                                onSelectOption: (option) =>
-                                    nav.selectPathOption(option),
-                                onRetry: () => _retryPreTrip(nav),
-                                onFitRoute: () {
-                                  final confirmed = _confirmedJourney;
-                                  if (confirmed == null) return;
-                                  _fitRoutePadded(
-                                    [
-                                      for (final segment in confirmed.segments)
-                                        ...segment.coordinates,
-                                    ],
-                                    padding: _previewMapPadding(),
+                            // --- NEARBY STAGES SHEET (home only). Sits under the header
+                            // in paint order so a very short screen never hides its drag
+                            // handle. Entrance: slides up from below. ---
+                            if (showsNearbySheet)
+                              Positioned.fill(
+                                child: SlideTransition(
+                                  position: Tween<Offset>(
+                                    begin: const Offset(0, 1),
+                                    end: Offset.zero,
+                                  ).animate(sheetAnim),
+                                  child: FadeTransition(
+                                    opacity: sheetAnim,
+                                    child: NearbyStagesSheet(
+                                      initialSize: minSheetExtent,
+                                      minSize: minSheetExtent,
+                                      maxSize: 0.85,
+                                      status: nearbyStatus,
+                                      entries: nearbyInRange,
+                                      distanceUnit: settings.distanceUnit,
+                                      onStageTap: (stage) => _showStageDetails(
+                                        stage,
+                                        userPosition: currentPosition,
+                                      ),
+                                      onSizeChanged: _onSheetExtentChanged,
+                                      onEnableLocation:
+                                          _requestLocationPermission,
+                                      onOpenSettings: _openLocationSettings,
+                                      permanentlyDenied:
+                                          _locationPermanentlyDenied,
+                                      onRetry: _requestLocationPermission,
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            // --- TOP FLOATING HEADER PANEL: brand + avatar, search
+                            // + locate, Quick Go and the four shortcut tiles.
+                            // The Route Preview draws its own back + "Route
+                            // Details" bar, and the search overlay replaces the
+                            // panel while open. Entrance: slides down from above.
+                            if (!showPreTrip)
+                              Positioned(
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                child: SlideTransition(
+                                  position: topSlide,
+                                  child: FadeTransition(
+                                    opacity: topAnim,
+                                    child: SafeArea(
+                                      bottom: false,
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            16, 8, 16, 0),
+                                        child: _showSearch
+                                            ? const SizedBox.shrink()
+                                            : Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                children: [
+                                                  HomeHeaderPanel(
+                                                    key: _headerPanelKey,
+                                                    userInitial: _userInitial,
+                                                    onAvatarTap: _openProfile,
+                                                    onSearchTap: _toggleSearch,
+                                                    onLocateTap: () =>
+                                                        _recenterOnUser(nav),
+                                                    onSeeAllQuickGo:
+                                                        _openSavedPlacesSheet,
+                                                    destinations:
+                                                        _savedDestinations,
+                                                    onDestinationTap:
+                                                        (destination) =>
+                                                            _startNavigation(
+                                                      destination.label,
+                                                      LatLng(
+                                                          destination.latitude,
+                                                          destination
+                                                              .longitude),
+                                                    ),
+                                                    onDestinationLongPress:
+                                                        _onAddFavorite,
+                                                    onSetDestination:
+                                                        _onAddFavorite,
+                                                    onSavedTap:
+                                                        _openSavedPlacesSheet,
+                                                  ),
+                                                ],
+                                              ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+
+                            // --- SEARCH OVERLAY ---
+                            if (_showSearch)
+                              Positioned(
+                                top: MediaQuery.of(context).padding.top + 8,
+                                left: 16,
+                                right: 16,
+                                bottom:
+                                    MediaQuery.of(context).size.height * 0.4,
+                                child: _buildSearchSection(context, nav),
+                              ),
+
+                            // --- MAP CONTROLS (right edge, 16dp above the sheet top).
+                            // Hidden when the sheet is expanded past 60% height, and
+                            // during the Route Preview, which brings its own re-fit
+                            // button. ---
+                            if (!_showSearch && !showPreTrip)
+                              ValueListenableBuilder<double>(
+                                valueListenable: _sheetExtent,
+                                builder: (context, rawExtent, _) {
+                                  final extent = rawExtent > 0
+                                      ? rawExtent
+                                      : minSheetExtent;
+                                  if (extent > 0.60) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  // Above the Home nearby sheet, or above the
+                                  // existing destination sheet (its initial
+                                  // 0.35 extent) in the navigating state.
+                                  final destinationSheet = !showPreTrip &&
+                                      isNavigating &&
+                                      nav.endName != null;
+                                  final anchoredHeight = showsNearbySheet
+                                      ? safeBodyHeight * extent + 16
+                                      : (destinationSheet
+                                          ? safeBodyHeight * 0.35 + 16
+                                          : media.padding.bottom + 16);
+                                  return Positioned(
+                                    right: 16,
+                                    bottom: anchoredHeight,
+                                    child: FadeTransition(
+                                      opacity: mapAnim,
+                                      child: HomeMapControls(
+                                        satellite: _satelliteEnabled,
+                                        onToggleLayers: _toggleMapStyle,
+                                        onZoomIn: _zoomIn,
+                                        onZoomOut: _zoomOut,
+                                        onRecenter: () => _recenterOnUser(nav),
+                                      ),
+                                    ),
                                   );
                                 },
-                                onSheetExtentChanged: (extent) =>
-                                    _previewSheetExtent = extent,
                               ),
-                            ),
-                        ],
-                      ),
-              );
-            },
+
+                            // --- DESTINATION SHEET: the existing destination / route
+                            // panel, kept only for the pre-journey navigating state.
+                            // The Home state above uses the Nearby Stages sheet. ---
+                            if (!_showJourneyPanel &&
+                                !showPreTrip &&
+                                isNavigating &&
+                                nav.endName != null)
+                              _buildBottomSheet(
+                                context,
+                                nav,
+                                journey,
+                                currentPosition,
+                                selectedPath,
+                                pathOptions,
+                                settings,
+                                sheetAnim,
+                                preTripSummary,
+                              ),
+
+                            // --- ROUTE PREVIEW: replaces the old pre-trip card
+                            // and the "To …" header. The map stays underneath
+                            // (same MapWidget instance); this layer owns only the
+                            // back bar, the re-fit button and the sheet. ---
+                            if (showPreTrip)
+                              Positioned.fill(
+                                child: RoutePreviewScreen(
+                                  mode: _previewStage != null
+                                      ? RoutePreviewMode.stage
+                                      : RoutePreviewMode.destination,
+                                  journey: _confirmedJourney,
+                                  selectedPath: selectedPath,
+                                  pathOptions: pathOptions,
+                                  stages: _allStages,
+                                  extras: _previewExtras,
+                                  stage: _previewStage,
+                                  stageRoutes: _previewStageRoutes,
+                                  destinationLabel:
+                                      nav.endName ?? 'Destination',
+                                  loading: preTripLoading,
+                                  error: preTripError,
+                                  onBack: () => nav.clearNavigation(),
+                                  onStartJourney: () =>
+                                      _startJourney(nav, journey),
+                                  onSelectOption: (option) =>
+                                      nav.selectPathOption(option),
+                                  onRetry: () => _retryPreTrip(nav),
+                                  onFitRoute: () {
+                                    final confirmed = _confirmedJourney;
+                                    if (confirmed == null) return;
+                                    _fitRoutePadded(
+                                      [
+                                        for (final segment
+                                            in confirmed.segments)
+                                          ...segment.coordinates,
+                                      ],
+                                      padding: _previewMapPadding(),
+                                    );
+                                  },
+                                  onSheetExtentChanged: (extent) =>
+                                      _previewSheetExtent = extent,
+                                ),
+                              ),
+                          ],
+                        ),
+                );
+              },
+            ),
           );
         },
       ),
@@ -2220,16 +2241,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           );
           if (_confirmedJourney != null) {
             // A theme switch recreates the map style and wipes annotations;
-            // re-apply the emerald preview polyline (or leave it to the live
+            // re-apply the route preview polyline (or leave it to the live
             // journey VM if the panel is already open).
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (preTripActive) {
                 _mapManager.setPolylineAnnotations(
-                  RoutePreviewPolyline.build(_confirmedJourney!),
+                  RoutePreviewPolyline.build(_confirmedJourney!,
+                      isDark: settings.isDarkTheme),
                 );
                 _applyPreTripMarkers();
               } else {
-                _polylineRenderer.renderJourney(_confirmedJourney!);
+                _polylineRenderer.renderJourney(_confirmedJourney!,
+                    isDark: settings.isDarkTheme);
               }
             });
           } else if (preTripActive) {

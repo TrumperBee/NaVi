@@ -22,6 +22,12 @@ class RouteSegment {
   final String? fromStageId;
   final String? toStageId;
 
+  /// True when the geometry is a straight-line stand-in rather than a real
+  /// road-following route (walking directions unavailable). The Route Preview
+  /// sheet and the Active Navigation panel show "Approximate route" when any
+  /// segment of the journey carries this flag.
+  final bool approximate;
+
   const RouteSegment({
     required this.mode,
     required this.label,
@@ -34,6 +40,7 @@ class RouteSegment {
     this.fareEstimate,
     this.fromStageId,
     this.toStageId,
+    this.approximate = false,
   });
 
   RouteSegment copyWith({
@@ -48,6 +55,7 @@ class RouteSegment {
     FareEstimate? fareEstimate,
     String? fromStageId,
     String? toStageId,
+    bool? approximate,
   }) {
     return RouteSegment(
       mode: mode ?? this.mode,
@@ -61,16 +69,24 @@ class RouteSegment {
       fareEstimate: fareEstimate ?? this.fareEstimate,
       fromStageId: fromStageId ?? this.fromStageId,
       toStageId: toStageId ?? this.toStageId,
+      approximate: approximate ?? this.approximate,
     );
   }
 
+  /// Walking leg. [distanceMeters] and [estimatedDuration] are normally left
+  /// null so they are measured from [coordinates]; the walking-directions
+  /// service passes the API's own distance/duration so the number on screen
+  /// matches the drawn line exactly.
   factory RouteSegment.walk({
     required String label,
     required List<LatLng> coordinates,
     required LatLng startPoint,
     required LatLng endPoint,
+    double? distanceMeters,
+    Duration? estimatedDuration,
+    bool approximate = false,
   }) {
-    final distance = _calculateDistance(coordinates);
+    final distance = distanceMeters ?? _calculateDistance(coordinates);
     return RouteSegment(
       mode: SegmentMode.walk,
       label: label,
@@ -79,8 +95,10 @@ class RouteSegment {
       startPoint: startPoint,
       endPoint: endPoint,
       distanceMeters: distance,
-      estimatedDuration: Duration(seconds: (distance / 1.4).round()), // 1.4 m/s walking speed
+      estimatedDuration: estimatedDuration ??
+          Duration(seconds: (distance / 1.4).round()), // 1.4 m/s walking
       fareEstimate: null,
+      approximate: approximate,
     );
   }
 

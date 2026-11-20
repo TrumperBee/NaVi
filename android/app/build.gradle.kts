@@ -1,5 +1,4 @@
 import java.util.Base64
-import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -30,13 +29,10 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Mapbox public token — injected at build time, never committed.
-        // Resolution order (see docs/BUILD_SETUP.md):
-        //  1. --dart-define=MAPBOX_TOKEN=...  (Flutter forwards it to Gradle
-        //     as base64-encoded KEY=VALUE entries in the `dart-defines`
-        //     project property),
-        //  2. android/key.properties  (local-only, gitignored),
-        //  3. MAPBOX_TOKEN environment variable or gradle property (CI).
+        // Mapbox public token — one source only: Flutter's --dart-define.
+        // Flutter forwards defines to Gradle as base64 KEY=VALUE entries in
+        // the `dart-defines` project property. Decode the same value used by
+        // lib/services/mapbox_config.dart and inject it into the manifest.
         val dartDefines: List<String> =
             (project.findProperty("dart-defines") as String? ?: "")
                 .split(',')
@@ -50,16 +46,7 @@ android {
             }.getOrNull()
         }.toMap()
 
-        val localSecrets = Properties().apply {
-            val f = rootProject.file("key.properties")
-            if (f.exists()) f.inputStream().use { stream -> load(stream) }
-        }
-
-        val mapboxToken: String? = defineMap["MAPBOX_TOKEN"]
-            ?: localSecrets.getProperty("MAPBOX_TOKEN")?.takeIf { it.isNotBlank() }
-            ?: System.getenv("MAPBOX_TOKEN")?.takeIf { it.isNotBlank() }
-            ?: providers.gradleProperty("MAPBOX_TOKEN").orNull
-        manifestPlaceholders["MAPBOX_TOKEN"] = mapboxToken.orEmpty()
+        manifestPlaceholders["MAPBOX_TOKEN"] = defineMap["MAPBOX_TOKEN"].orEmpty()
     }
 
     buildTypes {

@@ -110,6 +110,36 @@ void main() {
         expect(walkSegments.length, greaterThanOrEqualTo(2)); // at least start and end walk
       });
 
+      test('cross-corridor legs join exactly (no out-and-back connector)',
+          () async {
+        // CBD -> Makadara Stage: the walk ends on Mombasa Road while the ride
+        // starts on Jogoo Road. The short transfer must be a real walking leg,
+        // otherwise the renderer draws a straight connector that doubles back.
+        final journey = await RouteBuilderService.build(
+          origin: const LatLng(-1.2864, 36.8237),
+          destination: const SearchResult(
+            query: 'Makadara Stage',
+            lat: -1.29,
+            lng: 36.84,
+            resolvedLabel: 'Makadara Stage',
+            matchedCorridorName: 'jogoo_road',
+            nearestStageName: 'Makadara Stage',
+            nearestStageLat: -1.29,
+            nearestStageLng: 36.84,
+            routeNumbers: ['58', '10', '34'],
+            distanceToStageMeters: 0,
+            source: SearchResultSource.exactStage,
+          ),
+        );
+
+        expect(journey.segments.any((s) => s.mode == SegmentMode.matatu), isTrue);
+        for (var i = 1; i < journey.segments.length; i++) {
+          expect(journey.segments[i].startPoint,
+              equals(journey.segments[i - 1].endPoint),
+              reason: 'segment $i must start where segment ${i - 1} ended');
+        }
+      });
+
       test('segment labels are descriptive', () async {
         final journey = await RouteBuilderService.build(
           origin: kOffStageOrigin,

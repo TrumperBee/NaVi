@@ -1,27 +1,27 @@
-import '../config/mapbox_secrets.dart';
-
-/// Resolves the Mapbox public token in one place.
-///
-/// Resolution order:
-/// 1. `--dart-define=MAPBOX_TOKEN=pk...` at build/run time,
-/// 2. the local, git-ignored `lib/config/mapbox_secrets.dart` fallback.
-///
-/// The fallback makes plain `flutter run` / `flutter build apk` work without
-/// repeating the define on every command. It stays out of Git because that
-/// file is git-ignored; `lib/config/mapbox_secrets.example.dart` is the
-/// tracked template. The Android native map SDK mirrors the token into the
-/// manifest from `--dart-define`, `android/key.properties`, or the
-/// `MAPBOX_TOKEN` env var / Gradle property (see docs/BUILD_SETUP.md).
 class MapboxConfig {
-  /// Build-time define. Empty when the caller did not pass one.
-  static const String _definedToken = String.fromEnvironment(
+  /// The single runtime token source.
+  ///
+  /// Pass it with `--dart-define=MAPBOX_TOKEN=...`, or use
+  /// `--dart-define-from-file=dart_defines.json`, which is the same Flutter
+  /// define mechanism. It is empty when the caller does not supply it.
+  static const String accessToken = String.fromEnvironment(
     'MAPBOX_TOKEN',
     defaultValue: '',
   );
 
-  /// The define wins when it is non-empty; otherwise the local token file.
-  static const String accessToken =
-      _definedToken == '' ? kLocalMapboxPublicToken : _definedToken;
+  /// Exact startup warning text.
+  static const String missingTokenMessage =
+      'MAPBOX_TOKEN missing: set it with --dart-define';
+
+  static bool get isConfigured => accessToken.trim().isNotEmpty;
+
+  /// Called once at startup. Uses `print` so the log line is exactly
+  /// [missingTokenMessage] with no framework prefix.
+  static void logMissingTokenIfNeeded() {
+    if (isConfigured) return;
+    // ignore: avoid_print
+    print(missingTokenMessage);
+  }
 
   static const String lightStyle = 'mapbox://styles/mapbox/navigation-day-v1';
   static const String darkStyle = 'mapbox://styles/mapbox/navigation-night-v1';

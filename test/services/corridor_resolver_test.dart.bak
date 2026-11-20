@@ -1,0 +1,183 @@
+import 'package:test/test.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:navi_app/services/corridor_resolver.dart';
+import 'package:navi_app/services/geocoding_service.dart';
+import 'package:navi_app/data/nairobi_corridors_seed.dart';
+import 'package:navi_app/data/nairobi_stages_seed.dart';
+import 'package:navi_app/models/search_result.dart';
+
+void main() {
+  group('CorridorResolver', () {
+    group('findNearestCorridor', () {
+      test('returns Ngong Road for point near Adams Arcade', () {
+        final corridor = CorridorResolver.findNearestCorridor(-1.3000, 36.7833);
+        expect(corridor, isNotNull);
+        expect(corridor!.id, equals('ngong_road'));
+        expect(corridor.name, equals('Ngong Road'));
+      });
+
+      test('returns Thika Road for point near Githurai', () {
+        final corridor = CorridorResolver.findNearestCorridor(-1.2083, 36.9000);
+        expect(corridor, isNotNull);
+        expect(corridor!.id, equals('thika_road'));
+        expect(corridor.name, equals('Thika Road'));
+      });
+
+      test('returns Waiyaki Way for point near Westlands', () {
+        final corridor = CorridorResolver.findNearestCorridor(-1.2672, 36.8128);
+        expect(corridor, isNotNull);
+        expect(corridor!.id, equals('waiyaki_way'));
+        expect(corridor.name, equals('Waiyaki Way'));
+      });
+
+      test('returns Jogoo Road for point near Makadara', () {
+        final corridor = CorridorResolver.findNearestCorridor(-1.2900, 36.8400);
+        expect(corridor, isNotNull);
+        expect(corridor!.id, equals('jogoo_road'));
+        expect(corridor.name, equals('Jogoo Road'));
+      });
+
+      test('returns Mombasa Road for point near Industrial Area', () {
+        final corridor = CorridorResolver.findNearestCorridor(-1.3100, 36.8400);
+        expect(corridor, isNotNull);
+        expect(corridor!.id, equals('mombasa_road'));
+        expect(corridor.name, equals('Mombasa Road'));
+      });
+
+      test('returns null for point far from any corridor (e.g., deep in residential estate)', () {
+        final corridor = CorridorResolver.findNearestCorridor(-1.5000, 36.5000);
+        expect(corridor, isNull);
+      });
+    });
+
+    group('findNearestStageOnCorridor', () {
+      test('returns Adams Arcade for Ngong Road corridor near that coordinate', () {
+        final stage = CorridorResolver.findNearestStageOnCorridor('ngong_road', -1.3000, 36.7833);
+        expect(stage, isNotNull);
+        expect(stage!.name, equals("Adam's Arcade Stage"));
+        expect(stage.corridorId, equals('ngong_road'));
+      });
+
+      test('returns Githurai 45 for Thika Road corridor near that coordinate', () {
+        final stage = CorridorResolver.findNearestStageOnCorridor('thika_road', -1.2083, 36.9000);
+        expect(stage, isNotNull);
+        expect(stage!.name, equals('Githurai 45 Stage'));
+        expect(stage.corridorId, equals('thika_road'));
+      });
+
+      test('returns null for corridor with no stages', () {
+        final stage = CorridorResolver.findNearestStageOnCorridor('nonexistent', -1.0, 36.0);
+        expect(stage, isNull);
+      });
+    });
+
+    group('findExactStageMatch', () {
+      test('exact match for known stage name', () {
+        final stage = CorridorResolver.findExactStageMatch('Kencom Bus Station');
+        expect(stage, isNotNull);
+        expect(stage!.name, equals('Kencom Bus Station'));
+      });
+
+      test('case insensitive match', () => {
+        final stage = CorridorResolver.findExactStageMatch('kencom bus station');
+        expect(stage, isNotNull);
+        expect(stage!.name, equals('Kencom Bus Station'));
+      });
+
+      test('substring match', () {
+        final stage = CorridorResolver.findExactStageMatch('Kencom');
+        expect(stage, isNotNull);
+        expect(stage!.name, equals('Kencom Bus Station'));
+      });
+
+      test('fuzzy match with typo (Levenshtein distance <= 2)', () {
+        final stage = CorridorResolver.findExactStageMatch('Makdara');
+        expect(stage, isNotNull);
+        expect(stage!.name, equals('Makadara Stage'));
+      });
+
+      test('fuzzy match for Railways', () {
+        final stage = CorridorResolver.findExactStageMatch('Railways');
+        expect(stage, isNotNull);
+        expect(stage!.name, equals('Railways Bus Station'));
+      });
+
+      test('area match', () {
+        final stage = CorridorResolver.findExactStageMatch('Githurai');
+        expect(stage, isNotNull);
+        expect(stage!.name, equals('Githurai 45 Stage'));
+      });
+
+      test('returns null for unknown query', () {
+        final stage = CorridorResolver.findExactStageMatch('Unknown Place XYZ');
+        expect(stage, isNull);
+      });
+    });
+
+    group('resolve', () {
+      test('exact stage match returns exactStage source with distance 0', () {
+        final geocodeResult = GeocodingResult(
+          coordinate: const LatLng(-1.2833, 36.8167),
+          placeName: 'Kencom Bus Station, Nairobi',
+        );
+        final result = CorridorResolver.resolve('Kencom Bus Station', geocodeResult);
+
+        expect(result.source, equals(SearchResultSource.exactStage));
+        expect(result.nearestStageName, equals('Kencom Bus Station'));
+        expect(result.distanceToStageMeters, equals(0.0));
+        expect(result.matchedCorridorName, isNull);
+        expect(result.routeNumbers, isNotEmpty);
+      });
+
+      test('point off Ngong Road resolves to Ngong Road corridor with nearest stage', () {
+        final geocodeResult = GeocodingResult(
+          coordinate: const LatLng(-1.3050, 36.7850), // Muchai Drive area
+          placeName: 'Muchai Drive, Nairobi',
+        );
+        final result = CorridorResolver.resolve('Muchai Drive', geocodeResult);
+
+        expect(result.source, equals(SearchResultSource.mapboxGeocode));
+        expect(result.matchedCorridorName, equals('Ngong Road'));
+        expect(result.nearestStageName, equals("Adam's Arcade Stage"));
+        expect(result.routeNumbers, containsAll(['111', '24', '110', '125']));
+        expect(result.distanceToStageMeters, greaterThan(0));
+        expect(result.distanceToStageMeters, lessThan(1000));
+      });
+
+      test('point on Thika Road resolves correctly', () {
+        final geocodeResult = GeocodingResult(
+          coordinate: const LatLng(-1.2400, 36.8500), // Somewhere on Thika Road
+          placeName: 'Thika Road, Nairobi',
+        );
+        final result = CorridorResolver.resolve('Thika Road', geocodeResult);
+
+        expect(result.matchedCorridorName, equals('Thika Road'));
+        expect(result.nearestStageName, isNotEmpty);
+        expect(result.routeNumbers, isNotEmpty);
+      });
+
+      test('no corridor nearby returns no transit data', () {
+        final geocodeResult = GeocodingResult(
+          coordinate: const LatLng(-1.5000, 36.5000), // Far from Nairobi
+          placeName: 'Somewhere far away',
+        );
+        final result = CorridorResolver.resolve('Far Away Place', geocodeResult);
+
+        expect(result.nearestStageName, equals('No transit data nearby'));
+        expect(result.routeNumbers, isEmpty);
+        expect(result.distanceToStageMeters, equals(double.infinity));
+      });
+
+      test('fuzzy typo match still works via exact match path', () {
+        final geocodeResult = GeocodingResult(
+          coordinate: const LatLng(-1.2900, 36.8400),
+          placeName: 'Makdara, Nairobi',
+        );
+        final result = CorridorResolver.resolve('Makdara', geocodeResult);
+
+        expect(result.source, equals(SearchResultSource.exactStage));
+        expect(result.nearestStageName, equals('Makadara Stage'));
+      });
+    });
+  });
+}

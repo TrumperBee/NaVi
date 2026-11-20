@@ -80,7 +80,9 @@ class RoutePreviewSheet extends StatelessWidget {
                 NaviSpacing.xl,
                 NaviSpacing.xs,
                 NaviSpacing.xl,
-                NaviSpacing.lg + bottomInset,
+                // System gesture inset plus a full 24dp breath below the last
+                // card, so it cannot be clipped by the sheet's rounded border.
+                NaviSpacing.xxl + bottomInset,
               ),
               children: [
                 if (loading)
@@ -100,7 +102,7 @@ class RoutePreviewSheet extends StatelessWidget {
   Widget _ready(BuildContext context, bool isDark, RoutePreviewData data) {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     final bannerText = mode == RoutePreviewMode.stage
-        ? 'Walk to ${stageName ?? destinationLabel}'
+        ? data.stageBannerText
         : data.boardingText;
 
     final metrics = <RoutePreviewMetric>[
@@ -164,6 +166,27 @@ class RoutePreviewSheet extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           _MetricsRow(metrics: metrics, isDark: isDark),
+          if (data.approximateRoute) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 14,
+                  color: NaviColors.textSecondary(isDark),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Approximate route',
+                  style: TextStyle(
+                    fontFamily: NaviType.uiFontFamily,
+                    fontSize: 12,
+                    color: NaviColors.textSecondary(isDark),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (data.transferCount > 0) ...[
             const SizedBox(height: 8),
             Text(
@@ -374,13 +397,14 @@ class _Banner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      constraints: const BoxConstraints(minHeight: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: RoutePreviewTheme.bannerTint(),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const Icon(Icons.info_outline,
               size: 18, color: RoutePreviewTheme.emerald),
@@ -388,11 +412,14 @@ class _Banner extends StatelessWidget {
           Expanded(
             child: Text(
               text,
-              maxLines: 1,
+              // The stage banner is a full sentence; two lines on a 360dp
+              // screen beat truncating the second half of it.
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontFamily: NaviType.uiFontFamily,
-                fontSize: 15,
+                fontSize: 14,
+                height: 1.35,
                 fontWeight: FontWeight.w600,
                 color: NaviColors.textPrimary(isDark),
               ),
@@ -572,6 +599,7 @@ class _StageRouteCard extends StatelessWidget {
     final showHeadsign =
         headsign.isNotEmpty && !headsign.toLowerCase().contains('not recorded');
     return Container(
+      key: ValueKey('stageRouteCard_${summary.routeNumber}'),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: NaviColors.surface(isDark),
@@ -606,6 +634,7 @@ class _StageRouteCard extends StatelessWidget {
                 Text(
                   summary.headwayText,
                   maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: NaviType.uiFontFamily,
                     fontSize: 12,

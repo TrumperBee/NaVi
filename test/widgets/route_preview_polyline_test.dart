@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart' hide DistanceCalculator;
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:navi_app/design/navi_colors.dart';
 import 'package:navi_app/models/active_journey.dart';
 import 'package:navi_app/models/route_segment.dart';
@@ -32,26 +34,59 @@ void main() {
     );
   });
 
-  test('ride is solid emerald 6dp with a white 2dp casing', () {
+  test('ride is one solid 7dp blue stroke with a white 4dp casing', () {
     final options = RoutePreviewPolyline.build(
       ActiveJourney(segments: [_ride()]),
     );
     expect(options, hasLength(1));
     final ride = options.single;
-    expect(ride.lineColor, NaviColors.transitGreen.toARGB32());
-    expect(ride.lineWidth, 6.0);
+    expect(ride.lineColor, NaviColors.routeBlue.toARGB32());
+    expect(ride.lineWidth, 7.0);
     expect(ride.lineBorderColor, 0xFFFFFFFF);
-    expect(ride.lineBorderWidth, 2.0);
+    expect(ride.lineBorderWidth, 4.0);
+    expect(ride.lineJoin, LineJoin.ROUND);
+
   });
 
-  test('walk legs are dashed emerald 4dp strokes', () {
+  test('walk legs are one solid 6dp stroke, never a stitched dash line', () {
     final options = RoutePreviewPolyline.build(
       ActiveJourney(segments: [_walk(), _ride()]),
     );
-    final dashes = options.where((o) => o.lineWidth == 4.0).toList();
-    expect(dashes.length, greaterThan(1));
-    for (final dash in dashes) {
-      expect(dash.lineColor, NaviColors.transitGreen.toARGB32());
-    }
+    // One annotation per mode run: no dash stitching.
+    expect(options, hasLength(2));
+    final walk = options.firstWhere((o) => o.lineWidth == 6.0);
+    expect(walk.lineColor, NaviColors.routeBlue.toARGB32());
+    expect(walk.lineBorderColor, 0xFFFFFFFF);
+    expect(walk.lineBorderWidth, 4.0);
+
+  });
+
+  test('dark mode lifts the line to the night blue', () {
+    final options = RoutePreviewPolyline.build(
+      ActiveJourney(segments: [_ride()]),
+      isDark: true,
+    );
+    expect(options.single.lineColor, NaviColors.routeBlueDark.toARGB32());
+    expect(NaviColors.routeBlueDark, const Color(0xFF4D94FF));
+  });
+
+  test('walk geometry is passed through without simplification', () {
+    final dense = <LatLng>[
+      for (var i = 0; i <= 20; i++)
+        LatLng(-1.2833 + i * 0.00002, 36.8167 + i * 0.00002),
+    ];
+    final options = RoutePreviewPolyline.build(
+      ActiveJourney(segments: [
+        RouteSegment.walk(
+          label: 'Walk',
+          coordinates: dense,
+          startPoint: dense.first,
+          endPoint: dense.last,
+        ),
+      ]),
+    );
+    final coords = options.single.geometry.coordinates;
+    expect(coords.length, dense.length,
+        reason: 'no point closer than 5 m may be dropped');
   });
 }

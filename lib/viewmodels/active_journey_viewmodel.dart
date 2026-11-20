@@ -2,12 +2,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide DistanceCalculator;
 import 'package:navi_app/models/active_journey.dart';
 import 'package:navi_app/models/journey_record.dart';
 import 'package:navi_app/models/proximity_threshold.dart';
 import 'package:navi_app/models/route_segment.dart';
 import 'package:navi_app/models/search_result.dart';
+import 'package:navi_app/services/distance_calculator.dart';
 import 'package:navi_app/services/location_service.dart';
 import 'package:navi_app/services/proximity_alert_service.dart';
 import 'package:navi_app/services/route_builder_service.dart';
@@ -19,13 +20,18 @@ class ActiveJourneyViewModel extends ChangeNotifier {
   final MapboxMapManager _mapManager;
   final PolylineRendererService _polylineRenderer;
   final ProximityAlertService _proximityService;
-  
+
   ActiveJourney? _activeJourney;
   String _currentInstruction = '';
   StreamSubscription<Position>? _positionSubscription;
   bool _isJourneyActive = false;
   Timer? _instructionUpdateTimer;
   int _lastSegmentIndex = -1;
+
+  /// Throttle for route-ahead camera flights. The home screen's older 12 m
+  /// recentre is deliberately ignored while navigation owns the camera.
+  LatLng? _lastCameraTarget;
+  bool? _lastCameraRiding;
 
   String? _originLabel;
   String? _destinationLabel;
@@ -46,9 +52,22 @@ class ActiveJourneyViewModel extends ChangeNotifier {
   RouteSegment? get currentSegment => _activeJourney?.currentSegment;
   List<RouteSegment> get segments => _activeJourney?.segments ?? [];
   int get currentSegmentIndex => _activeJourney?.currentSegmentIndex ?? 0;
-  double get progressAlongCurrentSegment => _activeJourney?.progressAlongCurrentSegment ?? 0.0;
+  double get progressAlongCurrentSegment =>
+      _activeJourney?.progressAlongCurrentSegment ?? 0.0;
   bool get isComplete => _activeJourney?.isComplete ?? false;
   Stream<ProximityAlertEvent> get proximityEvents => _proximityService.events;
+
+  /// Keeps the live route line in the current theme's blue (and re-renders it
+  /// when the theme actually changes, since annotations do not restyle
+  /// themselves).
+  void setDarkMode(bool isDark) {
+    if (_polylineRenderer.isDark == isDark) return;
+    _polylineRenderer.isDark = isDark;
+    if (_isJourneyActive && _activeJourney != null) {
+      _polylineRenderer.updateCurrentSegment(_activeJourney!,
+          debugEvent: 'theme_change');
+    }
+  }
 
   /// Start a new journey from origin to destination
   Future<void> startJourney({
@@ -89,8 +108,14 @@ class ActiveJourneyViewModel extends ChangeNotifier {
     // Initialize proximity alerts for the first segment
     _updateProximityTarget();
 
+    // Active Navigation now owns the map: suppress the home screen's green
+    // stage markers and give the live renderer priority over home's writes.
+    await _mapManager.setActiveNavigationMode(true);
+
     // Render the full journey on map
-    await _polylineRenderer.renderJourney(journey);
+    await _polylineRenderer.renderJourney(journey,
+        navigationLine: true, debugEvent: 'first_frame');
+    await _updateNavigationCamera(force: true);
 
     // Start GPS tracking (reuse existing stream pattern)
     _startPositionTracking();
@@ -107,7 +132,10 @@ class ActiveJourneyViewModel extends ChangeNotifier {
   Future<void> reRenderJourney() async {
     final journey = _activeJourney;
     if (journey == null) return;
-    await _polylineRenderer.renderJourney(journey);
+    await _mapManager.setActiveNavigationMode(true);
+    await _polylineRenderer.renderJourney(journey,
+        navigationLine: true, debugEvent: 'map_recreated');
+    await _updateNavigationCamera(force: true);
   }
 
   /// Start listening to GPS position updates. Accuracy follows the current
@@ -132,23 +160,28 @@ class ActiveJourneyViewModel extends ChangeNotifier {
 
     final latLng = LatLng(position.latitude, position.longitude);
     _activeJourney!.updatePosition(latLng);
-    
-    // Update polyline rendering (progressive fading)
-    _polylineRenderer.updateCurrentSegment(_activeJourney!);
-    
+
+    // Update polyline rendering: the blue line is rebuilt from the user's new
+    // position forward, while earlier geometry stays as the grey traveled leg.
+    _polylineRenderer.updateCurrentSegment(_activeJourney!,
+        debugEvent: 'gps_update');
+
+    // Keep the next stretch of route framed and the camera north-up.
+    _updateNavigationCamera();
+
     // Check proximity alerts
     _proximityService.checkProximity(latLng);
-    
+
     // Check if segment changed
     _checkSegmentTransition();
-    
+
     _currentInstruction = _generateInstruction(_activeJourney!.currentSegment);
 
     // Progress bar, timeline and remaining-time metrics move with EVERY
     // position update, not just when the instruction text changes — always
     // notify or the HUD appears frozen.
     notifyListeners();
-    
+
     // Check if journey complete
     if (_activeJourney!.isComplete) {
       _completeJourney();
@@ -161,11 +194,41 @@ class ActiveJourneyViewModel extends ChangeNotifier {
     if (currentIndex != _lastSegmentIndex) {
       _lastSegmentIndex = currentIndex;
       _updateProximityTarget();
-      _polylineRenderer.updateCurrentSegment(_activeJourney!);
+      // The polyline was already rebuilt for this GPS fix above; only the
+      // spoken instruction needs to change on a segment boundary.
       // Voice guidance: read the new maneuver once we actually step onto it.
       // TtsService self-gates on the voice-guidance setting.
       TtsService().speak(_generateInstruction(_activeJourney!.currentSegment));
     }
+  }
+
+  /// Frames the next ~300 m of the live route instead of merely centring on
+  /// the puck. The map manager pins bearing to north and widens the zoom when
+  /// the traveller is on a matatu leg.
+  Future<void> _updateNavigationCamera({bool force = false}) async {
+    final journey = _activeJourney;
+    if (journey == null || !_isJourneyActive) return;
+
+    final user = journey.currentPosition ??
+        (journey.segments.isEmpty ? null : journey.segments.first.startPoint);
+    if (user == null) return;
+    final riding = journey.currentSegment?.mode == SegmentMode.matatu;
+
+    final last = _lastCameraTarget;
+    if (!force &&
+        last != null &&
+        _lastCameraRiding == riding &&
+        DistanceCalculator.distanceMeters(last, user) < 12) {
+      return;
+    }
+    _lastCameraTarget = user;
+    _lastCameraRiding = riding;
+
+    await _mapManager.followJourney(
+      user,
+      ahead: PolylineRendererService.pointsAhead(journey, meters: 300),
+      riding: riding,
+    );
   }
 
   void _updateProximityTarget() {
@@ -173,9 +236,10 @@ class ActiveJourneyViewModel extends ChangeNotifier {
     final segment = _activeJourney!.currentSegment;
     if (segment == null) return;
 
-    final isFinal = _activeJourney!.currentSegmentIndex == _activeJourney!.segments.length - 1 &&
+    final isFinal = _activeJourney!.currentSegmentIndex ==
+            _activeJourney!.segments.length - 1 &&
         segment.mode == SegmentMode.walk;
-    
+
     final target = ProximityTarget.fromStage(
       segment.label,
       segment.endPoint.latitude,
@@ -194,7 +258,8 @@ class ActiveJourneyViewModel extends ChangeNotifier {
     _instructionUpdateTimer?.cancel();
     _instructionUpdateTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_activeJourney != null && _activeJourney!.currentSegment != null) {
-        _currentInstruction = _generateInstruction(_activeJourney!.currentSegment);
+        _currentInstruction =
+            _generateInstruction(_activeJourney!.currentSegment);
         notifyListeners();
       }
     });
@@ -229,9 +294,12 @@ class ActiveJourneyViewModel extends ChangeNotifier {
     _isJourneyActive = false;
     _positionSubscription?.cancel();
     _instructionUpdateTimer?.cancel();
+    _mapManager.setActiveNavigationMode(false);
     _polylineRenderer.clearJourney();
     _activeJourney = null;
     _currentInstruction = '';
+    _lastCameraTarget = null;
+    _lastCameraRiding = null;
     notifyListeners();
   }
 
@@ -248,6 +316,7 @@ class ActiveJourneyViewModel extends ChangeNotifier {
   void dispose() {
     _positionSubscription?.cancel();
     _instructionUpdateTimer?.cancel();
+    _mapManager.setActiveNavigationMode(false);
     _polylineRenderer.clearJourney();
     _proximityService.dispose();
     super.dispose();

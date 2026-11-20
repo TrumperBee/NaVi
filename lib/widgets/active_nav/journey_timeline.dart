@@ -10,7 +10,7 @@ import 'active_nav_theme.dart';
 /// States are explicit and never conveyed by opacity:
 /// * completed — emerald check, normal primary text
 /// * current   — emerald filled marker, bold title, "Now" in emerald
-/// * upcoming  — outlined marker, secondary text at full contrast
+/// * upcoming  — outlined marker, primary text at full contrast
 ///
 /// When the sheet is expanded, the ride rows also carry the intermediate
 /// "N stops" row, which reveals the recorded stop names inline.
@@ -137,10 +137,9 @@ class NavTimelineRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCurrent = step.state == NavStepState.current;
-    final isCompleted = step.state == NavStepState.completed;
-    final titleColor = isCurrent || isCompleted
-        ? NaviColors.textPrimary(isDark)
-        : NaviColors.textSecondary(isDark);
+    // Every title — including upcoming steps — uses primary text. Progress is
+    // carried by the marker (filled vs hollow), never by dimming the copy.
+    final titleColor = NaviColors.textPrimary(isDark);
     final subtitleColor = NaviColors.textSecondary(isDark);
 
     return SizedBox(
