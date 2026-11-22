@@ -34,15 +34,17 @@ void main() {
     );
   });
 
-  test('ride is one solid 7dp blue stroke with a white 4dp casing', () {
+  test('ride is one solid 7dp blue stroke with a white 4dp casing in light mode', () {
     final options = RoutePreviewPolyline.build(
       ActiveJourney(segments: [_ride()]),
     );
     expect(options, hasLength(1));
     final ride = options.single;
     expect(ride.lineColor, NaviColors.routeBlue.toARGB32());
+    expect(NaviColors.routeBlue, const Color(0xFF1A73E8));
     expect(ride.lineWidth, 7.0);
-    expect(ride.lineBorderColor, 0xFFFFFFFF);
+    expect(ride.lineBorderColor, NaviColors.routeCasingLight.toARGB32());
+    expect(NaviColors.routeCasingLight, const Color(0xFFFFFFFF));
     expect(ride.lineBorderWidth, 4.0);
     expect(ride.lineJoin, LineJoin.ROUND);
 
@@ -56,18 +58,23 @@ void main() {
     expect(options, hasLength(2));
     final walk = options.firstWhere((o) => o.lineWidth == 6.0);
     expect(walk.lineColor, NaviColors.routeBlue.toARGB32());
-    expect(walk.lineBorderColor, 0xFFFFFFFF);
+    expect(walk.lineWidth, lessThan(7.0));
+    expect(walk.lineBorderColor, NaviColors.routeCasingLight.toARGB32());
     expect(walk.lineBorderWidth, 4.0);
 
   });
 
-  test('dark mode lifts the line to the night blue', () {
+  test('dark mode uses the night blue with a near-black casing', () {
     final options = RoutePreviewPolyline.build(
       ActiveJourney(segments: [_ride()]),
       isDark: true,
     );
     expect(options.single.lineColor, NaviColors.routeBlueDark.toARGB32());
-    expect(NaviColors.routeBlueDark, const Color(0xFF4D94FF));
+    expect(NaviColors.routeBlueDark, const Color(0xFF4C8DF6));
+    expect(options.single.lineBorderColor,
+        NaviColors.routeCasingDark.toARGB32());
+    expect(NaviColors.routeCasingDark, const Color(0xFF12161C));
+    expect(options.single.lineBorderWidth, 4.0);
   });
 
   test('walk geometry is passed through without simplification', () {

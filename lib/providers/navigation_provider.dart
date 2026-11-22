@@ -11,6 +11,8 @@ import 'package:navi_app/services/tts_service.dart';
 import 'package:navi_app/services/fare_calculator_service.dart';
 import 'package:navi_app/services/route_builder_service.dart';
 import 'package:navi_app/services/walking_directions_service.dart';
+import 'package:navi_app/services/gps_jitter_filter.dart';
+import 'package:navi_app/features/map/trip_marker_anchors.dart';
 import 'package:navi_app/data/seed_data.dart';
 
 class NavigationProvider extends ChangeNotifier {
@@ -37,6 +39,14 @@ class NavigationProvider extends ChangeNotifier {
   String _currentStreet = '';
   StreamSubscription<Position>? _positionStreamSubscription;
 
+  /// Smooths live fixes before they reach journey progress or the map.
+  final GpsJitterFilter _positionFilter = GpsJitterFilter();
+
+  /// The confirmed trip's departure anchor. This is deliberately separate from
+  /// [_startPoint], which remains the routing origin and keeps following GPS
+  /// for fresh route calculations. Marker code must only read this anchor.
+  final TripMarkerAnchors _tripAnchors = TripMarkerAnchors();
+
   LatLng? _startPoint;
   LatLng? _endPoint;
   String? _endName;
@@ -57,6 +67,23 @@ class NavigationProvider extends ChangeNotifier {
   bool get isLoadingRoute => _isLoadingRoute;
   Position? get currentPosition => _currentPosition;
   String get currentStreet => _currentStreet;
+
+  /// Fixed coordinate the confirmed journey was planned from. Never updated
+  /// from the live location stream.
+  LatLng? get plannedDeparture => _tripAnchors.departure;
+
+  /// Stores the departure anchor once per confirmed journey. Later GPS fixes
+  /// cannot change it; [clearNavigation] resets it for the next journey.
+  bool confirmPlannedDeparture(LatLng point) {
+    final changed = _tripAnchors.confirmDeparture(point);
+    if (changed) notifyListeners();
+    return changed;
+  }
+
+  void clearPlannedDeparture() {
+    if (_tripAnchors.clear()) notifyListeners();
+  }
+
   LatLng? get startPoint => _startPoint;
   LatLng? get endPoint => _endPoint;
   String? get endName => _endName;
@@ -120,21 +147,33 @@ class NavigationProvider extends ChangeNotifier {
       );
       _currentPosition = position;
       _currentStreet = street;
-      _startPoint = LatLng(position.latitude, position.longitude);
+      final initial = LatLng(position.latitude, position.longitude);
+      _startPoint = initial;
+      _positionFilter.seed(initial);
       _startLiveTracking();
       notifyListeners();
     } catch (e) {
       print('Location error: $e');
       _currentStreet = 'Nairobi CBD';
-      _startPoint = const LatLng(-1.2833, 36.8167);
+      const fallback = LatLng(-1.2833, 36.8167);
+      _startPoint = fallback;
+      _positionFilter.seed(fallback);
       notifyListeners();
     }
   }
 
   void _startLiveTracking() {
     _positionStreamSubscription = _locationService
-        .startLiveTracking(distanceFilter: 5)
+        .startLiveTracking(
+          distanceFilter: GpsJitterFilter.defaultMinimumDistanceMeters,
+        )
         .listen((position) async {
+      // Sub-5m oscillation is jitter, not movement. Ignore it before any
+      // progress, routing-origin or UI work happens.
+      if (!_positionFilter
+          .shouldAccept(LatLng(position.latitude, position.longitude))) {
+        return;
+      }
       final street = await _locationService.getStreetName(
         position.latitude,
         position.longitude,
@@ -217,6 +256,9 @@ class NavigationProvider extends ChangeNotifier {
   }
 
   void startNavigation(String destination, LatLng point) {
+    // A new destination means a new journey: drop the previous fixed anchor so
+    // the next confirmed route can store its own planned departure.
+    clearPlannedDeparture();
     _endPoint = point;
     _endName = destination;
     _isNavigating = true;
@@ -409,6 +451,7 @@ class NavigationProvider extends ChangeNotifier {
   }
 
   void clearNavigation() {
+    clearPlannedDeparture();
     _isNavigating = false;
     _hasArrived = false;
     _endPoint = null;

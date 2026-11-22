@@ -13,6 +13,7 @@ import '../providers/navigation_provider.dart';
 import '../providers/journey_provider.dart';
 import '../services/settings_service.dart';
 import '../services/mapbox_config.dart';
+import '../services/polyline_renderer.dart';
 import '../features/map/mapbox_map_manager.dart';
 import '../features/map/mode_toggle.dart';
 import '../features/map/location_status.dart';
@@ -212,16 +213,18 @@ class _MainMapScreenState extends State<MainMapScreen> {
     LatLng? endPoint,
     List<LatLng> routePolyline,
     List<LatLng> traveledRoute,
-    List<LatLng> remainingRoute,
-    bool isTransportMode,
-  ) {
+    List<LatLng> remainingRoute, {
+    bool isDark = false,
+  }) {
     _mapManager.clearAll();
     if (routePolyline.isNotEmpty || traveledRoute.isNotEmpty || remainingRoute.isNotEmpty) {
       MapboxLayers.setRoutePolylines(
         _mapManager,
         remainingRoute.isNotEmpty ? remainingRoute : routePolyline,
         traveledPoints: traveledRoute,
-        color: isTransportMode ? const Color(0xFF008751) : Colors.blue,
+        color: PolylineRendererService.routeColorFor(isDark),
+        casingColor: PolylineRendererService.casingColorFor(isDark),
+        casingWidth: PolylineRendererService.casingExtraWidth,
       );
     }
     if (endPoint != null) {
@@ -317,7 +320,7 @@ class _MainMapScreenState extends State<MainMapScreen> {
                           _syncMapAnnotations(
                             nav, journey, currentPosition, endPoint,
                             routePolyline, traveledRoute, remainingRoute,
-                            isTransportMode,
+                            isDark: settings.isDarkTheme,
                           );
                         },
                       ),

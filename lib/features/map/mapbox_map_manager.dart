@@ -11,6 +11,7 @@ import 'package:navi_app/design/navi_colors.dart';
 import 'package:navi_app/design/navi_marker_theme.dart';
 import 'package:navi_app/design/navi_typography.dart';
 import 'package:navi_app/models/transport_models.dart';
+import 'route_marker_style.dart';
 
 /// Central manager for all Mapbox map annotations.
 class MapboxMapManager {
@@ -38,6 +39,12 @@ class MapboxMapManager {
   /// on screen, so the home renderer cannot replace the live trimmed line.
   List<PolylineAnnotationOptions>? _lastPolylineOptions;
   List<PolylineAnnotationOptions>? _lastNavigationPolylineOptions;
+
+  /// Fixed endpoint anchors for Active Navigation. Cached because Mapbox drops
+  /// annotations on a style load; they are redrawn by
+  /// [_reapplyCachedAnnotations] and never derived from a GPS fix.
+  LatLng? _navigationDeparture;
+  LatLng? _navigationDestination;
 
   Future<void> onMapCreated(MapboxMap map) async {
     final generation = ++_generation;
@@ -102,6 +109,7 @@ class MapboxMapManager {
     }
     if (_activeNavigation) {
       await clearNavigationPoints();
+      await _drawCachedNavigationEndpoints();
     }
   }
 
@@ -169,6 +177,8 @@ class MapboxMapManager {
       await _reapplyCachedAnnotations();
     } else {
       _lastNavigationPolylineOptions = null;
+      _navigationDeparture = null;
+      _navigationDestination = null;
       await _configureDefaultLocation();
     }
   }
@@ -184,7 +194,9 @@ class MapboxMapManager {
         pulsingColor: NaviColors.signalBlue.toARGB32(),
         pulsingMaxRadius: 2.0,
         showAccuracyRing: true,
-        accuracyRingColor: NaviColors.signalBlue.toARGB32(),
+        accuracyRingColor: RouteMarkerStyle.gpsPuck
+            .withValues(alpha: RouteMarkerStyle.gpsAccuracyFillOpacity)
+            .toARGB32(),
         accuracyRingBorderColor: Colors.white.toARGB32(),
         puckBearingEnabled: true,
         puckBearing: PuckBearing.HEADING,
@@ -193,9 +205,10 @@ class MapboxMapManager {
   }
 
   /// Compact signal-blue puck used only while navigating: a 20dp dot with a
-  /// 3dp white ring, a 20%-opacity blue pulse, and a heading arrow image that
-  /// Mapbox rotates from the GPS course. The PNGs are rendered at 3x and the
-  /// scale expression divides that back out so the puck stays ~20dp.
+  /// 3dp white ring, a translucent blue accuracy ring, a blue pulse, and a
+  /// heading arrow image that Mapbox rotates from the GPS course. This is the
+  /// only journey mark that follows GPS. PNGs are rendered at 3x and the scale
+  /// expression divides that back out so the puck stays ~20dp.
   Future<void> _configureNavigationLocation() async {
     if (_mapboxMap == null) return;
     try {
@@ -210,9 +223,17 @@ class MapboxMapManager {
       await _mapboxMap!.location.updateSettings(LocationComponentSettings(
         enabled: true,
         pulsingEnabled: true,
-        pulsingColor: NaviColors.signalBlue.withValues(alpha: 0.2).toARGB32(),
+        pulsingColor: RouteMarkerStyle.gpsPuck
+            .withValues(alpha: RouteMarkerStyle.gpsAccuracyFillOpacity)
+            .toARGB32(),
         pulsingMaxRadius: 18.0,
-        showAccuracyRing: false,
+        showAccuracyRing: true,
+        accuracyRingColor: RouteMarkerStyle.gpsPuck
+            .withValues(alpha: RouteMarkerStyle.gpsAccuracyFillOpacity)
+            .toARGB32(),
+        accuracyRingBorderColor: RouteMarkerStyle.gpsPuck
+            .withValues(alpha: RouteMarkerStyle.gpsAccuracyBorderOpacity)
+            .toARGB32(),
         puckBearingEnabled: true,
         puckBearing: PuckBearing.HEADING,
         locationPuck: LocationPuck(
@@ -250,7 +271,7 @@ class MapboxMapManager {
             ..strokeWidth = 3
             ..strokeJoin = ui.StrokeJoin.round,
         );
-        canvas.drawPath(path, Paint()..color = NaviColors.signalBlue);
+        canvas.drawPath(path, Paint()..color = RouteMarkerStyle.gpsPuck);
       } else {
         canvas.drawCircle(
           center,
@@ -260,7 +281,7 @@ class MapboxMapManager {
             ..style = PaintingStyle.stroke
             ..strokeWidth = 3,
         );
-        canvas.drawCircle(center, 7, Paint()..color = NaviColors.signalBlue);
+        canvas.drawCircle(center, 7, Paint()..color = RouteMarkerStyle.gpsPuck);
       }
 
       final image = await recorder.endRecording().toImage(
@@ -292,9 +313,12 @@ class MapboxMapManager {
         if (!_activeNavigation) await _polylineManager?.deleteAll();
       });
 
+  /// Clears the whole pre-trip point set, including the departure circle in the
+  /// circle manager. Used only by Route Preview's keyed redraw.
   Future<void> clearPoints() => _enqueueAnnotations(() async {
         if (!_ready) return;
         await _pointManager?.deleteAll();
+        await _circleManager?.deleteAll();
       });
 
   Future<void> addStartDot(LatLng point) async {
@@ -316,7 +340,9 @@ class MapboxMapManager {
     } catch (_) {}
   }
 
-  /// The blue "you are here" dot used by the Route Preview.
+  /// Legacy blue "you are here" dot kept for older callers. Route Preview now
+  /// draws [addDepartureMarker] instead so the planned origin never follows a
+  /// later GPS fix.
   Future<void> addPreviewUserDot(LatLng point) async {
     if (!_ready || _activeNavigation) return;
     try {
@@ -337,11 +363,52 @@ class MapboxMapManager {
     } catch (_) {}
   }
 
+  /// Emerald circle with a white ring: the coordinate the journey was planned
+  /// from. This annotation is never refreshed from the location stream.
+  Future<void> addDepartureMarker(LatLng point, {Color? color}) async {
+    if (!_ready) return;
+    if (_activeNavigation) {
+      _navigationDeparture = LatLng(point.latitude, point.longitude);
+    }
+    await _enqueueAnnotations(
+      () => _drawDepartureAnnotation(point, color: color),
+    );
+  }
+
+  Future<void> _drawDepartureAnnotation(LatLng point, {Color? color}) async {
+    if (!_ready) return;
+    try {
+      await _circleManager?.createMulti([
+        CircleAnnotationOptions(
+          circleColor: (color ?? RouteMarkerStyle.departureFill).toARGB32(),
+          circleRadius: RouteMarkerStyle.departureRadius,
+          circleStrokeWidth: RouteMarkerStyle.departureRingWidth,
+          circleStrokeColor: RouteMarkerStyle.departureRing.toARGB32(),
+          geometry: _pointToJson(point),
+        ),
+      ]);
+    } catch (_) {}
+  }
+
+  /// A red-outlined pin, optionally carrying the destination label chip. The
+  /// pin's tip — not the chip — is anchored to [point].
+  Future<void> addDestinationPin(
+    LatLng point, {
+    required String label,
+    Color? outlineColor,
+  }) async {
+    if (!_ready) return;
+    await _enqueueAnnotations(
+      () => _drawDestinationAnnotation(
+        point,
+        label: label,
+        outlineColor: outlineColor,
+      ),
+    );
+  }
+
   /// A coloured pin with a white label chip baked above it, used by the Route
-  /// Preview for the boarding stage (emerald) and the destination (red).
-  ///
-  /// The annotation is bottom-anchored so the pin's tip — not the chip — sits
-  /// exactly on [point].
+  /// Preview for the boarding stage (emerald).
   Future<void> addLabeledPin(
     LatLng point, {
     required Color color,
@@ -362,23 +429,75 @@ class MapboxMapManager {
     } catch (_) {}
   }
 
+  /// Unlabelled red-outlined destination pin. Unlike the home stage markers,
+  /// this endpoint is allowed to stay on screen during Active Navigation.
   Future<void> addDestinationMarker(LatLng point) async {
-    if (!_ready || _activeNavigation) return;
+    if (!_ready) return;
+    if (_activeNavigation) {
+      _navigationDestination = LatLng(point.latitude, point.longitude);
+    }
+    await _enqueueAnnotations(() => _drawDestinationAnnotation(point));
+  }
+
+  Future<void> _drawDestinationAnnotation(
+    LatLng point, {
+    String? label,
+    Color? outlineColor,
+  }) async {
+    if (!_ready) return;
     try {
-      final icon = await _createMarkerImage(
-        color: Colors.red,
-        icon: Icons.location_on,
-        size: 40,
-      );
+      final color = outlineColor ?? RouteMarkerStyle.destinationOutline;
+      final hasLabel = label != null && label.trim().isNotEmpty;
+      final icon = hasLabel
+          ? await _createLabeledMarkerImage(
+              color: color,
+              label: label.trim(),
+              outlined: true,
+            )
+          : await _createPinImage(outlineColor: color);
       if (icon == null) return;
       await _pointManager?.createMulti([
         PointAnnotationOptions(
           geometry: _pointToJson(point),
           iconSize: 1.0,
           iconImage: icon,
+          iconAnchor: IconAnchor.BOTTOM,
         ),
       ]);
     } catch (_) {}
+  }
+
+  /// Replaces the Active Navigation endpoint set atomically. Home calls this
+  /// once after the journey starts; style reloads redraw the cached values.
+  Future<void> setNavigationEndpointMarkers({
+    LatLng? departure,
+    LatLng? destination,
+  }) async {
+    if (!_activeNavigation) return;
+    if (departure != null) {
+      _navigationDeparture = LatLng(departure.latitude, departure.longitude);
+    }
+    if (destination != null) {
+      _navigationDestination =
+          LatLng(destination.latitude, destination.longitude);
+    }
+    await _enqueueAnnotations(() async {
+      if (!_ready) return;
+      await _pointManager?.deleteAll();
+      await _circleManager?.deleteAll();
+      final start = _navigationDeparture;
+      final end = _navigationDestination;
+      if (start != null) await _drawDepartureAnnotation(start);
+      if (end != null) await _drawDestinationAnnotation(end);
+    });
+  }
+
+  Future<void> _drawCachedNavigationEndpoints() async {
+    if (!_ready || !_activeNavigation) return;
+    final departure = _navigationDeparture;
+    final destination = _navigationDestination;
+    if (departure != null) await _drawDepartureAnnotation(departure);
+    if (destination != null) await _drawDestinationAnnotation(destination);
   }
 
   Future<void> addStageMarkers(List<StageModel> stages) async {
@@ -427,6 +546,8 @@ class MapboxMapManager {
     Color color = Colors.blue,
     double width = 5.0,
     double opacity = 0.8,
+    Color? casingColor,
+    double? casingWidth,
   }) async {
     if (!_ready || _activeNavigation || points.length < 2) return;
     await _polylineManager?.deleteAll();
@@ -444,6 +565,8 @@ class MapboxMapManager {
         lineColor: color.withValues(alpha: opacity).toARGB32(),
         lineWidth: width,
         lineOpacity: opacity,
+        lineBorderColor: casingColor?.toARGB32(),
+        lineBorderWidth: casingWidth,
         geometry: _lineStringToJson(points),
       ));
       await _polylineManager?.createMulti(options);
@@ -479,13 +602,14 @@ class MapboxMapManager {
     if (!_ready || _activeNavigation) return;
     await _circleManager?.deleteAll();
     try {
-      final fill = Colors.blue.withValues(alpha: 0.2);
+      final fill = RouteMarkerStyle.gpsPuck
+          .withValues(alpha: RouteMarkerStyle.gpsAccuracyFillOpacity);
       await _circleManager?.createMulti([
         CircleAnnotationOptions(
           circleColor: fill.toARGB32(),
           circleRadius: 30,
           circleStrokeWidth: 3,
-          circleStrokeColor: Colors.blue.toARGB32(),
+          circleStrokeColor: RouteMarkerStyle.gpsPuck.toARGB32(),
           geometry: _pointToJson(point),
         ),
       ]);
@@ -676,6 +800,88 @@ class MapboxMapManager {
   LineString _lineStringToJson(List<LatLng> points) =>
       LineString.fromJson(_lineStringToMap(points));
 
+  /// Shared pointed pin silhouette. The tip sits at `top + height` so an
+  /// annotation with `IconAnchor.BOTTOM` lands exactly on its coordinate.
+  ui.Path _pinPath({
+    required double centerX,
+    required double top,
+    required double width,
+    required double height,
+  }) {
+    final tip = top + height;
+    return ui.Path()
+      ..moveTo(centerX, top)
+      ..cubicTo(
+        centerX + width * 0.56,
+        top + height * 0.06,
+        centerX + width * 0.5,
+        top + height * 0.56,
+        centerX,
+        tip,
+      )
+      ..cubicTo(
+        centerX - width * 0.5,
+        top + height * 0.56,
+        centerX - width * 0.56,
+        top + height * 0.06,
+        centerX,
+        top,
+      )
+      ..close();
+  }
+
+  /// Bakes the unlabelled, bottom-anchored destination pin used in Active
+  /// Navigation: white fill with a #C62828 outline so it cannot be mistaken
+  /// for the emerald departure disc or the blue GPS puck.
+  Future<String?> _createPinImage({
+    required Color outlineColor,
+  }) async {
+    const pixelRatio = 3.0;
+    const width = 26.0;
+    const height = 34.0;
+    final key = 'destination_pin_${outlineColor.toARGB32()}';
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.scale(pixelRatio);
+      final pin = _pinPath(centerX: width / 2, top: 1, width: width - 2, height: height - 2);
+      canvas.drawPath(
+        pin,
+        Paint()..color = RouteMarkerStyle.destinationFill,
+      );
+      canvas.drawPath(
+        pin,
+        Paint()
+          ..color = outlineColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = RouteMarkerStyle.destinationOutlineWidth
+          ..strokeJoin = ui.StrokeJoin.round,
+      );
+      final image = await recorder.endRecording().toImage(
+            (width * pixelRatio).round(),
+            (height * pixelRatio).round(),
+          );
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null) return null;
+      await _mapboxMap?.style.addStyleImage(
+        key,
+        pixelRatio,
+        MbxImage(
+          width: (width * pixelRatio).round(),
+          height: (height * pixelRatio).round(),
+          data: bytes.buffer.asUint8List(),
+        ),
+        false,
+        [],
+        [],
+        null,
+      );
+      return key;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<String?> _createMarkerImage({
     required Color color,
     required IconData icon,
@@ -735,9 +941,10 @@ class MapboxMapManager {
   Future<String?> _createLabeledMarkerImage({
     required Color color,
     required String label,
+    bool outlined = false,
   }) async {
     final key = 'preview_pin_${color.toARGB32()}_${label.hashCode}_'
-        '${NaviMarkerTheme.isDark}';
+        '${NaviMarkerTheme.isDark}_${outlined ? 'outline' : 'filled'}';
     try {
       const pixelRatio = 3.0;
       const chipFontSize = NaviMarkerTheme.chipFontSize;
@@ -770,7 +977,6 @@ class MapboxMapManager {
       final height = chipHeight + tailHeight + gap + pinHeight;
       final centerX = width / 2;
       final pinTop = chipHeight + tailHeight + gap;
-      final pinTip = pinTop + pinHeight;
 
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
@@ -805,32 +1011,27 @@ class MapboxMapManager {
       canvas.drawPath(tail, Paint()..color = NaviMarkerTheme.chipBackground);
 
       // A real pin silhouette (rounded head, pointed tip), not a plain circle.
-      final pin = ui.Path()
-        ..moveTo(centerX, pinTop)
-        ..cubicTo(
-          centerX + pinWidth * 0.56,
-          pinTop + pinHeight * 0.06,
-          centerX + pinWidth * 0.5,
-          pinTop + pinHeight * 0.56,
-          centerX,
-          pinTip,
-        )
-        ..cubicTo(
-          centerX - pinWidth * 0.5,
-          pinTop + pinHeight * 0.56,
-          centerX - pinWidth * 0.56,
-          pinTop + pinHeight * 0.06,
-          centerX,
-          pinTop,
-        )
-        ..close();
-      canvas.drawPath(pin, Paint()..color = color);
+      // The destination uses a white fill with a red outline so its shape AND
+      // colour differ from the emerald departure disc.
+      final pin = _pinPath(
+        centerX: centerX,
+        top: pinTop,
+        width: pinWidth,
+        height: pinHeight,
+      );
+      canvas.drawPath(
+        pin,
+        Paint()..color = outlined ? RouteMarkerStyle.destinationFill : color,
+      );
       canvas.drawPath(
         pin,
         Paint()
-          ..color = Colors.white
+          ..color = outlined ? color : Colors.white
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
+          ..strokeWidth = outlined
+              ? RouteMarkerStyle.destinationOutlineWidth
+              : 1.5
+          ..strokeJoin = ui.StrokeJoin.round,
       );
 
       final picture = recorder.endRecording();

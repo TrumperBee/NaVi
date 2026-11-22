@@ -715,6 +715,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     List<LatLng> traveledRoute,
     List<LatLng> remainingRoute, {
     bool preTrip = false,
+    bool isDark = false,
   }) {
     _mapManager.clearAll();
     if (preTrip) {
@@ -737,11 +738,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _mapManager,
           remainingRoute.isNotEmpty ? remainingRoute : routePolyline,
           traveledPoints: traveledRoute,
-          color: const Color(0xFF1E88E5),
+          color: PolylineRendererService.routeColorFor(isDark),
+          casingColor: PolylineRendererService.casingColorFor(isDark),
+          casingWidth: PolylineRendererService.casingExtraWidth,
         );
       }
     }
-    if (endPoint != null) {
+    if (endPoint != null && !journey.isActive) {
+      // Active Navigation draws its own cached red-outlined pin after the
+      // renderer takes over; adding it here as well would duplicate it on a
+      // style reload.
       MapboxLayers.addDestinationMarker(_mapManager, endPoint);
     }
     // NOTE: no manual user-location circle here anymore — the native Mapbox
@@ -795,6 +801,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Build and start the new active journey with polyline rendering
     final userPos = nav.currentPosition;
     if (userPos != null) {
+      // If routing skipped the preview build (e.g. a direct hand-off), freeze
+      // the planned origin now. Once set, no GPS fix can change this anchor.
+      nav.confirmPlannedDeparture(
+        LatLng(userPos.latitude, userPos.longitude),
+      );
       final origin = LatLng(userPos.latitude, userPos.longitude);
       final destination = SearchResult(
         query: nav.endName ?? 'Destination',
@@ -835,6 +846,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         );
       }
     }
+
+    // The endpoint set is fixed at route-confirmation coordinates. From here
+    // on only the native blue puck follows GPS.
+    await _mapManager.setNavigationEndpointMarkers(
+      departure: nav.plannedDeparture,
+      destination: nav.endPoint,
+    );
 
     setState(() => _showJourneyPanel = true);
 
@@ -906,6 +924,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _isBuildingRoute = false;
         _previewExtras = extras;
       });
+      // Freeze the origin used for this confirmed build. Later GPS updates
+      // move only the blue puck, never this departure annotation.
+      nav.confirmPlannedDeparture(
+        LatLng(userPos.latitude, userPos.longitude),
+      );
       _fitRoutePadded([
         for (final segment in journey.segments) ...segment.coordinates,
       ], padding: _previewMapPadding());
@@ -928,36 +951,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Draws the pre-trip point set: the blue "you are here" dot, the red
-  /// destination pin and the green boarding-stage pin (all with white label
-  /// chips). Guarded by [_preTripMarkerKey] so position-driven rebuilds do not
-  /// clear and redraw an identical set.
+  /// Draws the pre-trip point set: the fixed emerald departure disc, the
+  /// red-outlined destination pin, and the emerald boarding-stage pin. The key
+  /// contains only confirmed-route data, never a live GPS coordinate, so a
+  /// location fix cannot redraw or drift the endpoints.
   Future<void> _applyPreTripMarkers() async {
     final nav = context.read<NavigationProvider>();
+    final journey = _confirmedJourney;
+    final departure = nav.plannedDeparture ??
+        (journey == null || journey.segments.isEmpty
+            ? null
+            : journey.segments.first.startPoint);
+    if (departure != null) nav.confirmPlannedDeparture(departure);
+
     final endPoint = nav.endPoint;
+    final departureKey = departure == null
+        ? 'none'
+        : '${departure.latitude.toStringAsFixed(6)},'
+            '${departure.longitude.toStringAsFixed(6)}';
     final key =
-        '${_confirmedRouteKey ?? 'pending'}#${_previewStage?.id ?? 'destination'}#'
+        '${_confirmedRouteKey ?? 'pending'}#$departureKey#${_previewStage?.id ?? 'destination'}#'
         '${endPoint == null ? 'none' : '${endPoint.latitude.toStringAsFixed(5)},${endPoint.longitude.toStringAsFixed(5)}'}';
     if (_preTripMarkerKey == key) return;
     if (!_mapManager.isReady) return;
     _preTripMarkerKey = key;
     await _mapManager.clearPoints();
     if (!mounted || !nav.isNavigating) return;
+
+    final fixedDeparture = nav.plannedDeparture ?? departure;
+    if (fixedDeparture != null) {
+      await _mapManager.addDepartureMarker(fixedDeparture);
+    }
     final destinationLabel = (nav.endName ?? '').trim();
     if (endPoint != null) {
-      await _mapManager.addLabeledPin(
+      await _mapManager.addDestinationPin(
         endPoint,
-        color: RoutePreviewTheme.destinationRed,
         label: destinationLabel.isEmpty ? 'Destination' : destinationLabel,
       );
     }
-    final journey = _confirmedJourney;
-    if (journey == null || journey.segments.isEmpty) return;
-    await _mapManager.addPreviewUserDot(journey.segments.first.startPoint);
     if (!mounted || !nav.isNavigating) return;
     // In stage mode the destination pin already IS the stage, so a second
     // green pin would sit on top of it.
     if (_previewStage != null) return;
+    if (journey == null || journey.segments.isEmpty) return;
     final matatu =
         journey.segments.where((s) => s.mode == SegmentMode.matatu).toList();
     if (matatu.isEmpty) return;
@@ -1157,6 +1193,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const [],
                 const [],
                 const [],
+                isDark: settings.isDarkTheme,
               );
             });
           }
@@ -2238,6 +2275,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             traveledRoute,
             remainingRoute,
             preTrip: preTripActive,
+            isDark: settings.isDarkTheme,
           );
           if (_confirmedJourney != null) {
             // A theme switch recreates the map style and wipes annotations;

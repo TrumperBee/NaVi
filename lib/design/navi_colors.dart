@@ -23,8 +23,12 @@ class NaviColors {
   /// Route badges — the one bold accent.
   static const psvYellow = Color(0xFFFFC627);
 
-  /// Primary CTA only.
+  /// Primary CTA only. Also the confirmed-trip departure marker fill.
   static const transitGreen = Color(0xFF00875A);
+
+  /// Destination pin outline (mock-up spec: #C62828). Kept here so map
+  /// annotations and the Route Preview theme share one red token.
+  static const destinationPin = Color(0xFFC62828);
 
   /// GPS dot / live tracking only.
   static const signalBlue = Color(0xFF1A73E8);
@@ -34,8 +38,16 @@ class NaviColors {
   /// rule above stays explicit at every call site.
   static const routeBlue = Color(0xFF1A73E8);
 
-  /// Route line, dark mode - lifted so it stays legible over the night map.
-  static const routeBlueDark = Color(0xFF4D94FF);
+  /// Route line, dark mode. Spec token: lifted over the night map.
+  static const routeBlueDark = Color(0xFF4C8DF6);
+
+  /// Route casing under the light-mode line. White keeps the ride readable
+  /// without fighting the day map's pale road fills.
+  static const routeCasingLight = Color(0xFFFFFFFF);
+
+  /// Route casing under the dark-mode line. Near-black separates the ride from
+  /// the night map's dark roads (spec token).
+  static const routeCasingDark = Color(0xFF12161C);
 
   /// Proximity alerts.
   static const alertAmber = Color(0xFFF59E0B);

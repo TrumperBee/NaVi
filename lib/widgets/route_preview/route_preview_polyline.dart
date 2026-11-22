@@ -6,10 +6,11 @@ import '../../services/polyline_renderer.dart';
 /// Route Preview (pre-trip) line styling.
 ///
 /// There is exactly ONE route line style in the app, owned by
-/// [PolylineRendererService]: solid blue with a white casing, 7 dp for the
-/// ride and 6 dp for walking legs, round caps and joins, blue lifted in dark
-/// mode. This builder is a thin, side-effect-free wrapper so widget tests can
-/// call it without a map — it must never grow its own dash/colour logic.
+/// [PolylineRendererService]: solid mode-blue with a contrasting casing
+/// (white by day, near-black at night), 7 dp for the ride and 6 dp for walking
+/// legs, with round caps and joins. This builder is a thin, side-effect-free
+/// wrapper so widget tests can call it without a map — it must never grow its
+/// own dash/colour logic.
 class RoutePreviewPolyline {
   const RoutePreviewPolyline._();
 

@@ -22,10 +22,11 @@ class PolylineSegmentRun {
 
 /// Renders the journey polyline as ONE solid route style.
 ///
-/// Both the ride and the walking legs are solid blue with a white casing:
-/// 7 dp for the ride, 6 dp for walks, on a casing 4 dp wider, with round caps
-/// and round joins. Walk vs ride is communicated by weight, not by a different
-/// colour or a fake dash pattern.
+/// Both ride and walking legs use the mode's route blue (light `#1A73E8`,
+/// dark `#4C8DF6`) over a contrasting casing (light white, dark `#12161C`):
+/// 7 dp for the ride and 6 dp for walks, with round caps and joins. Mapbox's
+/// annotation options expose width but not a dash array, so walk vs ride is
+/// communicated by weight, not by a fake dash pattern.
 ///
 /// [renderJourney] with [preview] = true renders the full confirmed route
 /// (used by the pre-trip overview); the non-preview mode keeps the
@@ -42,7 +43,7 @@ class PolylineRendererService {
   /// Route line weight, walking leg (dp).
   static const double walkWidth = 6.0;
 
-  /// The white casing under every route line is this much wider than the line.
+  /// The casing under every route line is this much wider than the line.
   static const double casingExtraWidth = 4.0;
 
   final MapboxMapManager _mapManager;
@@ -56,6 +57,11 @@ class PolylineRendererService {
   /// Route blue: the light-mode tone by day, the lifted tone at night.
   static Color routeColorFor(bool isDark) =>
       isDark ? NaviColors.routeBlueDark : NaviColors.routeBlue;
+
+  /// Casing under the route line. White on the day map, near-black on the
+  /// night map so the direction stays legible in both themes.
+  static Color casingColorFor(bool isDark) =>
+      isDark ? NaviColors.routeCasingDark : NaviColors.routeCasingLight;
 
   Future<void> initialize() async {}
 
@@ -271,6 +277,7 @@ class PolylineRendererService {
     required bool isDark,
   }) {
     final routeColor = routeColorFor(isDark);
+    final casingColor = casingColorFor(isDark);
     final options = <PolylineAnnotationOptions>[];
     for (final mode in const [SegmentMode.walk, SegmentMode.matatu]) {
       for (final run in runs) {
@@ -279,8 +286,8 @@ class PolylineRendererService {
           lineColor: routeColor.toARGB32(),
           lineWidth: mode == SegmentMode.matatu ? rideWidth : walkWidth,
           lineOpacity: 1.0,
-          // The border is drawn under the fill, so this is the white casing.
-          lineBorderColor: Colors.white.toARGB32(),
+          // The border is drawn under the fill, so this is the mode casing.
+          lineBorderColor: casingColor.toARGB32(),
           lineBorderWidth: casingExtraWidth,
           lineJoin: LineJoin.ROUND,
           geometry: _toLineString(run.coords),

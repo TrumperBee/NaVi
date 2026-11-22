@@ -5,14 +5,14 @@ import '../../services/polyline_renderer.dart';
 
 /// Tokens that are specific to the Route Preview (pre-trip) screen.
 ///
-/// Everything else comes from [NaviColors] / `NaviType`. The only value that
-/// has no design-system token yet is the destination-pin red, so it lives here
-/// rather than being repeated at call sites.
+/// Everything else comes from [NaviColors] / `NaviType`. The destination-pin
+/// red is aliased here because Route Preview uses it as a theme token; the
+/// map annotation painter reads the same colour from [NaviColors].
 class RoutePreviewTheme {
   const RoutePreviewTheme._();
 
   /// Destination pin / marker red (mock-up spec: #C62828).
-  static const Color destinationRed = Color(0xFFC62828);
+  static const Color destinationRed = NaviColors.destinationPin;
 
   /// Brand emerald — accents only (pills, banner wash, boarding pin).
   static const Color emerald = NaviColors.transitGreen;

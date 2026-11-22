@@ -9,6 +9,7 @@ import 'package:navi_app/models/proximity_threshold.dart';
 import 'package:navi_app/models/route_segment.dart';
 import 'package:navi_app/models/search_result.dart';
 import 'package:navi_app/services/distance_calculator.dart';
+import 'package:navi_app/services/gps_jitter_filter.dart';
 import 'package:navi_app/services/location_service.dart';
 import 'package:navi_app/services/proximity_alert_service.dart';
 import 'package:navi_app/services/route_builder_service.dart';
@@ -24,6 +25,7 @@ class ActiveJourneyViewModel extends ChangeNotifier {
   ActiveJourney? _activeJourney;
   String _currentInstruction = '';
   StreamSubscription<Position>? _positionSubscription;
+  final GpsJitterFilter _positionFilter = GpsJitterFilter();
   bool _isJourneyActive = false;
   Timer? _instructionUpdateTimer;
   int _lastSegmentIndex = -1;
@@ -99,6 +101,7 @@ class ActiveJourneyViewModel extends ChangeNotifier {
   }) async {
     _activeJourney = journey;
     _isJourneyActive = true;
+    _positionFilter.reset();
     _lastSegmentIndex = journey.currentSegmentIndex;
     _originLabel = originLabel;
     _destinationLabel = destinationLabel;
@@ -144,7 +147,9 @@ class ActiveJourneyViewModel extends ChangeNotifier {
   void _startPositionTracking() {
     _positionSubscription?.cancel();
     _positionSubscription = LocationService()
-        .startLiveTracking(distanceFilter: 5)
+        .startLiveTracking(
+          distanceFilter: GpsJitterFilter.defaultMinimumDistanceMeters,
+        )
         .listen(_onPositionUpdate);
   }
 
@@ -159,6 +164,10 @@ class ActiveJourneyViewModel extends ChangeNotifier {
     if (!_isJourneyActive || _activeJourney == null) return;
 
     final latLng = LatLng(position.latitude, position.longitude);
+    // Ignore fixes that only reflect GPS jitter. The native puck is the only
+    // mark allowed to follow the live stream, and even it should not twitch on
+    // sub-5m noise.
+    if (!_positionFilter.shouldAccept(latLng)) return;
     _activeJourney!.updatePosition(latLng);
 
     // Update polyline rendering: the blue line is rebuilt from the user's new

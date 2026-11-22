@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:navi_app/models/active_journey.dart';
@@ -168,6 +169,10 @@ void main() {
         expect(option.lineJoin, equals(LineJoin.ROUND));
 
         expect(option.lineColor, NaviColors.routeBlue.toARGB32());
+        expect(option.lineBorderColor,
+            NaviColors.routeCasingLight.toARGB32());
+        expect(option.lineBorderWidth,
+            PolylineRendererService.casingExtraWidth);
         expect(option.lineWidth, PolylineRendererService.walkWidth);
       }
     });
@@ -247,13 +252,20 @@ void main() {
       }
     });
 
-    test('uses the lifted blue in dark mode', () {
+    test('uses the night blue with near-black casing in dark mode', () {
       final options =
           PolylineRendererService.buildLiveOptions(journey(), isDark: true);
       final blue = options
           .where((o) => o.lineColor == NaviColors.routeBlueDark.toARGB32())
           .toList();
       expect(blue, hasLength(3));
+      expect(NaviColors.routeBlueDark, const Color(0xFF4C8DF6));
+      for (final option in blue) {
+        expect(option.lineBorderColor,
+            NaviColors.routeCasingDark.toARGB32());
+        expect(option.lineBorderWidth,
+            PolylineRendererService.casingExtraWidth);
+      }
     });
 
     test('camera geometry covers roughly the next 300 m, not the whole trip',
