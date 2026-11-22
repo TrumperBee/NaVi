@@ -30,14 +30,14 @@ notepad dart_defines.json
 
 ```json
 {
-  "MAPBOX_TOKEN": "pk.YOUR_MAPBOX_PUBLIC_TOKEN"
+  "MAPBOX_TOKEN": "pk.your_token_here"
 }
 ```
 
 You can also pass the token directly on a single command:
 
 ```powershell
-flutter run --dart-define=MAPBOX_TOKEN=pk.YOUR_MAPBOX_PUBLIC_TOKEN
+flutter run --dart-define=MAPBOX_TOKEN=pk.your_token_here
 ```
 
 Both forms are the same Flutter define mechanism; the file form keeps the token
@@ -51,7 +51,7 @@ Use the local define file for every Flutter command:
 
 ```powershell
 flutter run --dart-define-from-file=dart_defines.json
-flutter build apk --dart-define-from-file=dart_defines.json
+flutter build apk --release --dart-define-from-file=dart_defines.json
 flutter build appbundle --dart-define-from-file=dart_defines.json
 flutter test --dart-define-from-file=dart_defines.json
 ```
@@ -93,6 +93,21 @@ Add or merge this in `.vscode/launch.json`:
   ]
 }
 ```
+
+### OpenCode terminal
+
+OpenCode uses the same shell as your terminal. Run the commands from the
+project root with the define-file flag:
+
+```powershell
+flutter run --dart-define-from-file=dart_defines.json
+flutter build apk --release --dart-define-from-file=dart_defines.json
+```
+
+When asking OpenCode to run or build the app, include
+`--dart-define-from-file=dart_defines.json` in the command. Do not set
+`MAPBOX_TOKEN` in the environment or add a native token resource; the define
+file is the single source.
 
 ---
 

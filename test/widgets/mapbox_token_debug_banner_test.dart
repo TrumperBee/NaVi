@@ -9,12 +9,15 @@ void main() {
     var taps = 0;
 
     await tester.pumpWidget(
-      MapboxTokenDebugBanner(
-        child: SizedBox.expand(
-          child: Center(
-            child: TextButton(
-              onPressed: () => taps++,
-              child: const Text('Underlay'),
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MapboxTokenDebugBanner(
+          child: SizedBox.expand(
+            child: Center(
+              child: TextButton(
+                onPressed: () => taps++,
+                child: const Text('Underlay'),
+              ),
             ),
           ),
         ),
